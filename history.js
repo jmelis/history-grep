@@ -281,6 +281,15 @@ class HistorySearchPro {
         const relevanceScore = item.relevanceScore;
         const periodVisitCount = item.periodVisitCount;
 
+        // Extract domain for favicon
+        let faviconUrl = '';
+        try {
+            const urlObj = new URL(url);
+            faviconUrl = `${urlObj.protocol}//${urlObj.hostname}/favicon.ico`;
+        } catch (e) {
+            faviconUrl = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="%23ccc"/></svg>';
+        }
+
         let metaItems = [
             `<span class="result-meta-item">Last visited: ${lastVisit}</span>`,
             `<span class="result-meta-item">Visits: ${visitCount}</span>`
@@ -296,7 +305,13 @@ class HistorySearchPro {
 
         return `
             <div class="result-item">
-                <a href="${url}" class="result-title" target="_blank">${this.escapeHtml(title)}</a>
+                <div class="result-header">
+                    <img src="${faviconUrl}"
+                         class="result-favicon"
+                         onerror="this.src='data:image/svg+xml,<svg xmlns=&quot;http://www.w3.org/2000/svg&quot; viewBox=&quot;0 0 16 16&quot;><circle cx=&quot;8&quot; cy=&quot;8&quot; r=&quot;6&quot; fill=&quot;%23ccc&quot;/></svg>'"
+                         alt="Site icon">
+                    <a href="${url}" class="result-title" target="_blank">${this.escapeHtml(title)}</a>
+                </div>
                 <div class="result-url">${this.escapeHtml(url)}</div>
                 <div class="result-meta">
                     ${metaItems.join('')}
