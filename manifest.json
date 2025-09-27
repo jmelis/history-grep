@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "History Search Pro",
+  "version": "1.0.0",
+  "description": "Enhanced search interface for Chrome's browsing history with fuzzy search and advanced filtering",
+  "permissions": [
+    "history"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "History Search Pro"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

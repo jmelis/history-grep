@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>History Search Pro</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f8f9fa;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            color: #1a73e8;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 16px;
+        }
+
+        .search-container {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 24px;
+        }
+
+        .search-input-wrapper {
+            position: relative;
+            margin-bottom: 20px;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 16px 20px;
+            font-size: 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            transition: border-color 0.2s;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #1a73e8;
+        }
+
+        .filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            align-items: center;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .filter-label {
+            font-size: 14px;
+            font-weight: 500;
+            color: #666;
+        }
+
+        .date-filters {
+            display: flex;
+            gap: 8px;
+        }
+
+        .date-filter-btn {
+            padding: 8px 16px;
+            border: 1px solid #e0e0e0;
+            background: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .date-filter-btn.active {
+            background: #1a73e8;
+            color: white;
+            border-color: #1a73e8;
+        }
+
+        .date-filter-btn:hover:not(.active) {
+            background: #f0f7ff;
+            border-color: #1a73e8;
+        }
+
+        .custom-date-range {
+            display: none;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .custom-date-range.active {
+            display: flex;
+        }
+
+        .date-input {
+            padding: 8px 12px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .sort-select {
+            padding: 8px 12px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            background: white;
+            cursor: pointer;
+        }
+
+        .results-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            padding: 12px 0;
+        }
+
+        .results-count {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .no-results {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .results-container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .result-item {
+            padding: 16px 20px;
+            border-bottom: 1px solid #f0f0f0;
+            transition: background-color 0.2s;
+        }
+
+        .result-item:hover {
+            background: #f8f9fa;
+        }
+
+        .result-item:last-child {
+            border-bottom: none;
+        }
+
+        .result-title {
+            font-size: 16px;
+            font-weight: 500;
+            color: #1a73e8;
+            margin-bottom: 4px;
+            text-decoration: none;
+            display: block;
+        }
+
+        .result-title:hover {
+            text-decoration: underline;
+        }
+
+        .result-url {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 8px;
+            word-break: break-all;
+        }
+
+        .result-meta {
+            display: flex;
+            gap: 16px;
+            font-size: 12px;
+            color: #888;
+        }
+
+        .result-meta-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .relevance-score {
+            background: #e3f2fd;
+            color: #1565c0;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            margin-top: 24px;
+        }
+
+        .pagination button {
+            padding: 8px 16px;
+            border: 1px solid #e0e0e0;
+            background: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .pagination button:hover:not(:disabled) {
+            background: #f0f7ff;
+            border-color: #1a73e8;
+        }
+
+        .pagination button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .pagination .active {
+            background: #1a73e8;
+            color: white;
+            border-color: #1a73e8;
+        }
+
+        @media (max-width: 768px) {
+            .filters {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .date-filters {
+                flex-wrap: wrap;
+            }
+
+            .results-info {
+                flex-direction: column;
+                gap: 8px;
+                align-items: stretch;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>History Search Pro</h1>
+            <p>Enhanced search for your browsing history</p>
+        </div>
+
+        <div class="search-container">
+            <div class="search-input-wrapper">
+                <input
+                    type="text"
+                    class="search-input"
+                    placeholder="Search your browsing history..."
+                    id="searchInput"
+                    autocomplete="off"
+                >
+            </div>
+
+            <div class="filters">
+                <div class="filter-group">
+                    <label class="filter-label">Time Period</label>
+                    <div class="date-filters">
+                        <button class="date-filter-btn active" data-period="1">Last Day</button>
+                        <button class="date-filter-btn" data-period="7">Last Week</button>
+                        <button class="date-filter-btn" data-period="30">Last Month</button>
+                        <button class="date-filter-btn" data-period="all">All Time</button>
+                        <button class="date-filter-btn" data-period="custom">Custom</button>
+                    </div>
+                    <div class="custom-date-range" id="customDateRange">
+                        <input type="date" class="date-input" id="startDate">
+                        <span>to</span>
+                        <input type="date" class="date-input" id="endDate">
+                    </div>
+                </div>
+
+                <div class="filter-group">
+                    <label class="filter-label">Sort By</label>
+                    <select class="sort-select" id="sortSelect">
+                        <option value="relevance">Best Match</option>
+                        <option value="recent">Most Recent</option>
+                        <option value="visits-all">Most Visited (All Time)</option>
+                        <option value="visits-period">Most Visited (This Period)</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div id="resultsInfo" class="results-info" style="display: none;">
+            <div class="results-count" id="resultsCount"></div>
+        </div>
+
+        <div id="loading" class="loading" style="display: none;">
+            Searching your history...
+        </div>
+
+        <div id="noResults" class="no-results" style="display: none;">
+            <h3>No results found</h3>
+            <p>Try adjusting your search terms or date range</p>
+        </div>
+
+        <div id="resultsContainer" class="results-container" style="display: none;">
+            <!-- Results will be populated here -->
+        </div>
+
+        <div id="pagination" class="pagination" style="display: none;">
+            <!-- Pagination will be populated here -->
+        </div>
+    </div>
+
+    <script src="history.js"></script>
+</body>
+</html>
