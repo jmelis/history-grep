@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "History Search Pro",
+  "name": "HistoryGrep",
   "version": "1.0.0",
   "description": "Enhanced search interface for Chrome's browsing history with fuzzy search and advanced filtering",
   "permissions": [
@@ -8,7 +8,7 @@
     "tabs"
   ],
   "action": {
-    "default_title": "History Search Pro"
+    "default_title": "HistoryGrep"
   },
   "background": {
     "service_worker": "background.js"

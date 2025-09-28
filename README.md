@@ -1,4 +1,4 @@
-# History Search Pro - Chrome Extension
+# HistoryGrep - Chrome Extension
 
 An enhanced search interface for Chrome's browsing history with fuzzy search capabilities, advanced filtering, and multiple sorting options.
 
@@ -29,7 +29,7 @@ An enhanced search interface for Chrome's browsing history with fuzzy search cap
 
 3. **Pin the Extension** (Optional but recommended):
    - Click the Extensions icon (puzzle piece) in Chrome's toolbar
-   - Find "History Search Pro" and click the pin icon to keep it visible
+   - Find "HistoryGrep" and click the pin icon to keep it visible
 
 ### Method 2: Pack and Install
 
@@ -47,7 +47,7 @@ An enhanced search interface for Chrome's browsing history with fuzzy search cap
 ### Basic Usage
 
 1. **Open the Extension**:
-   - Click the History Search Pro icon in your Chrome toolbar
+   - Click the HistoryGrep icon in your Chrome toolbar
    - Click "Open History Search" to launch the search interface
 
 2. **Search Your History**:
@@ -126,7 +126,7 @@ history-search-pro/
 ### Modifying the Extension
 1. Make changes to the source files
 2. Go to `chrome://extensions/`
-3. Click the refresh icon on the History Search Pro extension
+3. Click the refresh icon on the HistoryGrep extension
 4. Test your changes
 
 ### Adding Features
