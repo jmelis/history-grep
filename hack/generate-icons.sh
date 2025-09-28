@@ -1,14 +1,14 @@
 #!/bin/bash
 
-# Generate icon PNG files from favicon.svg using ImageMagick
+# Generate icon PNG files from favicon.svg using Inkscape
 # Usage: ./generate-icons.sh
 
 set -e
 
-# Check if magick is installed
-if ! command -v magick &> /dev/null; then
-    echo "Error: ImageMagick (magick) is not installed"
-    echo "Install with: brew install imagemagick"
+# Check if inkscape is installed
+if ! command -v inkscape &> /dev/null; then
+    echo "Error: Inkscape is not installed"
+    echo "Install with: brew install inkscape"
     exit 1
 fi
 
@@ -23,14 +23,14 @@ mkdir -p icons
 
 echo "Generating icon files from favicon.svg..."
 
-# Generate different sizes
-magick favicon.svg -resize 16x16 icons/icon16.png
+# Generate different sizes using Inkscape
+inkscape favicon.svg --export-type=png --export-width=16 --export-filename=icons/icon16.png
 echo "Generated icon16.png"
 
-magick favicon.svg -resize 48x48 icons/icon48.png
+inkscape favicon.svg --export-type=png --export-width=48 --export-filename=icons/icon48.png
 echo "Generated icon48.png"
 
-magick favicon.svg -resize 128x128 icons/icon128.png
+inkscape favicon.svg --export-type=png --export-width=128 --export-filename=icons/icon128.png
 echo "Generated icon128.png"
 
 echo "All icons generated successfully!"

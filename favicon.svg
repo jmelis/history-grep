@@ -1,66 +1,21 @@
 <svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <!-- Gradient for lens background -->
-    <radialGradient id="lensGradient" cx="0.3" cy="0.3" r="0.8">
-      <stop offset="0%" stop-color="#e3f2fd"/>
-      <stop offset="100%" stop-color="#bbdefb"/>
-    </radialGradient>
-    
-    <!-- Shine effect gradient -->
-    <radialGradient id="shineGradient" cx="0.3" cy="0.3" r="0.5">
-      <stop offset="0%" stop-color="rgba(255,255,255,0.8)"/>
-      <stop offset="70%" stop-color="rgba(255,255,255,0.3)"/>
-      <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
-    </radialGradient>
-    
-    <!-- Shine effect for border -->
-    <linearGradient id="borderShine" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#42a5f5"/>
-      <stop offset="30%" stop-color="#1976d2"/>
-      <stop offset="70%" stop-color="#0d47a1"/>
-      <stop offset="100%" stop-color="#1976d2"/>
-    </linearGradient>
-    
-    <!-- Shine effect for handle (rotated to match handle direction) -->
-    <linearGradient id="handleShine" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#42a5f5"/>
-      <stop offset="50%" stop-color="#1976d2"/>
-      <stop offset="100%" stop-color="#0d47a1"/>
-    </linearGradient>
-  </defs>
+  <!-- Magnifying glass lens - larger and simpler -->
+  <circle cx="45" cy="45" r="30" 
+          fill="#e3f2fd" 
+          stroke="#1976d2" 
+          stroke-width="12"/>
   
-  <!-- Magnifying glass lens background -->
-  <circle cx="48" cy="48" r="32" 
-          fill="url(#lensGradient)"/>
-  
-  <!-- Magnifying glass lens border with shine -->
-  <circle cx="48" cy="48" r="32" 
-          fill="none" 
-          stroke="url(#borderShine)" 
-          stroke-width="8"/>
-  
-  <!-- Shine effect on lens surface -->
-  <ellipse cx="42" cy="42" rx="18" ry="20" 
-           fill="url(#shineGradient)"/>
-  
-  <!-- Magnifying glass handle with coordinated shine -->
-  <line x1="72" y1="72" x2="96" y2="96" 
-        stroke="url(#handleShine)" 
-        stroke-width="8" 
+  <!-- Magnifying glass handle - thicker -->
+  <line x1="68" y1="68" x2="90" y2="90" 
+        stroke="#1976d2" 
+        stroke-width="12" 
         stroke-linecap="round"/>
   
-  <!-- Code box background (square) -->
-  <rect x="34" y="36" width="28" height="24" 
-        rx="3" ry="3" 
-        fill="#263238" 
-        stroke="#37474f" 
-        stroke-width="1"/>
-  
-  <!-- Regex text ".*" inside the code box -->
-  <text x="48" y="52" 
+  <!-- Simple regex text without box - larger and bolder -->
+  <text x="45" y="58" 
         font-family="Monaco, 'Courier New', monospace" 
-        font-size="12" 
-        font-weight="bold" 
+        font-size="28" 
+        font-weight="900" 
         text-anchor="middle" 
-        fill="#4fc3f7">.*</text>
+        fill="#1976d2">.*</text>
 </svg>
