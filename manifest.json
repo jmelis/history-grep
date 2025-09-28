@@ -5,7 +5,8 @@
   "description": "Enhanced search interface for Chrome's browsing history with fuzzy search and advanced filtering",
   "permissions": [
     "history",
-    "tabs"
+    "tabs",
+    "storage"
   ],
   "action": {
     "default_title": "HistoryGrep"

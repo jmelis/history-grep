@@ -15,6 +15,12 @@ class HistoryGrep {
         this.startDate = document.getElementById('startDate');
         this.excludeOpenTabs = document.getElementById('excludeOpenTabs');
         this.closeAllTabsBtn = document.getElementById('closeAllTabs');
+        this.settingsBtn = document.getElementById('settingsBtn');
+        this.settingsModal = document.getElementById('settingsModal');
+        this.closeSettingsBtn = document.getElementById('closeSettingsBtn');
+        this.saveSettingsBtn = document.getElementById('saveSettingsBtn');
+        this.closeTabsExcludeList = document.getElementById('closeTabsExcludeList');
+        this.searchResultsExcludeList = document.getElementById('searchResultsExcludeList');
 
         this.currentResults = [];
         this.displayedResults = [];
@@ -24,10 +30,16 @@ class HistoryGrep {
         this.selectedSort = 'lastVisit';
         this.searchTimeout = null;
         this.openTabUrls = new Set();
+        this.settings = {
+            closeTabsExcludePatterns: [],
+            searchResultsExcludePatterns: []
+        };
 
         this.initializeEventListeners();
         this.initializeDateInputs();
-        this.performSearch();
+        this.loadSettings().then(() => {
+            this.performSearch();
+        });
     }
 
     initializeEventListeners() {
@@ -94,12 +106,46 @@ class HistoryGrep {
             this.closeAllUnpinnedTabs();
         });
 
-        // Handle result clicks for tab switching
+        // Settings button
+        this.settingsBtn.addEventListener('click', () => {
+            this.openSettings();
+        });
+
+        // Close settings button
+        this.closeSettingsBtn.addEventListener('click', () => {
+            this.closeSettings();
+        });
+
+        // Save settings button
+        this.saveSettingsBtn.addEventListener('click', () => {
+            this.saveSettings();
+        });
+
+        // Click outside modal to close
+        this.settingsModal.addEventListener('click', (e) => {
+            if (e.target === this.settingsModal) {
+                this.closeSettings();
+            }
+        });
+
+        // Add pattern buttons
+        document.querySelectorAll('.add-pattern-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const targetList = e.target.getAttribute('data-target');
+                this.addPatternToList(targetList);
+            });
+        });
+
+        // Handle result clicks for tab switching and copy URL
         this.resultsContainer.addEventListener('click', async (e) => {
             if (e.target.classList.contains('result-title')) {
                 e.preventDefault();
                 const url = e.target.getAttribute('data-url');
                 await this.switchToTabOrOpen(url);
+            } else if (e.target.closest('.copy-url-btn')) {
+                e.preventDefault();
+                const url = e.target.closest('.copy-url-btn').getAttribute('data-url');
+                await this.copyToClipboard(url);
             }
         });
 
@@ -230,6 +276,13 @@ class HistoryGrep {
             // Exclude open tabs if option is checked
             if (this.excludeOpenTabs.checked) {
                 filteredItems = filteredItems.filter(item => !this.openTabUrls.has(item.url));
+            }
+
+            // Apply search results exclude patterns
+            if (this.settings.searchResultsExcludePatterns.length > 0) {
+                filteredItems = filteredItems.filter(item => {
+                    return !this.matchesAnyPattern(item.url, this.settings.searchResultsExcludePatterns);
+                });
             }
 
             // Calculate scores for filtered items
@@ -406,6 +459,11 @@ class HistoryGrep {
                     </div>
                     <div class="result-meta-line">
                         <span class="result-url">${highlightedUrl}</span>
+                        <button class="copy-url-btn" data-url="${url}" title="Copy URL">
+                            <svg viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                            </svg>
+                        </button>
                         <span class="result-meta">${metaItems.join(' • ')}</span>
                     </div>
                 </div>
@@ -519,7 +577,7 @@ class HistoryGrep {
             const tabsToClose = [];
             windows.forEach(window => {
                 window.tabs.forEach(tab => {
-                    if (!tab.pinned) {
+                    if (!tab.pinned && !this.matchesAnyPattern(tab.url, this.settings.closeTabsExcludePatterns)) {
                         tabsToClose.push(tab.id);
                     }
                 });
@@ -541,6 +599,163 @@ class HistoryGrep {
         } catch (error) {
             console.error('Error closing tabs:', error);
         }
+    }
+
+    async copyToClipboard(text) {
+        try {
+            await navigator.clipboard.writeText(text);
+            // Visual feedback
+            this.showToast('URL copied to clipboard!');
+        } catch (error) {
+            console.error('Failed to copy to clipboard:', error);
+            // Fallback for older browsers
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            this.showToast('URL copied to clipboard!');
+        }
+    }
+
+    showToast(message) {
+        // Create and show a temporary toast notification
+        const toast = document.createElement('div');
+        toast.textContent = message;
+        toast.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #333;
+            color: white;
+            padding: 12px 16px;
+            border-radius: 6px;
+            z-index: 10000;
+            font-size: 14px;
+        `;
+        document.body.appendChild(toast);
+
+        setTimeout(() => {
+            document.body.removeChild(toast);
+        }, 2000);
+    }
+
+    matchesAnyPattern(url, patterns) {
+        return patterns.some(pattern => {
+            try {
+                const regex = new RegExp(pattern, 'i');
+                return regex.test(url);
+            } catch (error) {
+                console.warn('Invalid pattern:', pattern, error);
+                return false;
+            }
+        });
+    }
+
+    async loadSettings() {
+        try {
+            const result = await new Promise((resolve) => {
+                chrome.storage.sync.get({
+                    closeTabsExcludePatterns: [],
+                    searchResultsExcludePatterns: []
+                }, resolve);
+            });
+            this.settings = result;
+        } catch (error) {
+            console.error('Error loading settings:', error);
+        }
+    }
+
+    async saveSettingsToStorage() {
+        try {
+            await new Promise((resolve) => {
+                chrome.storage.sync.set(this.settings, resolve);
+            });
+        } catch (error) {
+            console.error('Error saving settings:', error);
+        }
+    }
+
+    openSettings() {
+        this.populateSettingsUI();
+        this.settingsModal.classList.add('active');
+    }
+
+    closeSettings() {
+        this.settingsModal.classList.remove('active');
+    }
+
+    populateSettingsUI() {
+        this.populatePatternList('closeTabsExcludeList', this.settings.closeTabsExcludePatterns);
+        this.populatePatternList('searchResultsExcludeList', this.settings.searchResultsExcludePatterns);
+    }
+
+    populatePatternList(listId, patterns) {
+        const list = document.getElementById(listId);
+        list.innerHTML = '';
+
+        patterns.forEach((pattern, index) => {
+            this.addPatternToList(listId, pattern, index);
+        });
+
+        // Always add one empty row for new entries
+        if (patterns.length === 0) {
+            this.addPatternToList(listId, '', 0);
+        }
+    }
+
+    addPatternToList(listId, pattern = '', index = null) {
+        const list = document.getElementById(listId);
+        const patternItem = document.createElement('div');
+        patternItem.className = 'pattern-item';
+
+        if (index === null) {
+            index = list.children.length;
+        }
+
+        patternItem.innerHTML = `
+            <input type="text" class="pattern-input" value="${pattern}" placeholder="e.g. github\.com|important-site\.com" data-index="${index}">
+            <button class="remove-pattern-btn" data-index="${index}">Remove</button>
+        `;
+
+        // Add event listeners
+        const removeBtn = patternItem.querySelector('.remove-pattern-btn');
+        removeBtn.addEventListener('click', () => {
+            patternItem.remove();
+        });
+
+        list.appendChild(patternItem);
+    }
+
+    saveSettings() {
+        // Collect patterns from UI
+        this.settings.closeTabsExcludePatterns = this.collectPatternsFromList('closeTabsExcludeList');
+        this.settings.searchResultsExcludePatterns = this.collectPatternsFromList('searchResultsExcludeList');
+
+        // Save to storage
+        this.saveSettingsToStorage();
+
+        // Close modal and refresh search
+        this.closeSettings();
+        this.performSearch();
+
+        this.showToast('Settings saved!');
+    }
+
+    collectPatternsFromList(listId) {
+        const list = document.getElementById(listId);
+        const inputs = list.querySelectorAll('.pattern-input');
+        const patterns = [];
+
+        inputs.forEach(input => {
+            const pattern = input.value.trim();
+            if (pattern) {
+                patterns.push(pattern);
+            }
+        });
+
+        return patterns;
     }
 
     escapeHtml(text) {
