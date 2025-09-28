@@ -4,7 +4,11 @@
       "Bash(mkdir:*)",
       "Bash(convert:*)",
       "Bash(git init:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git checkout:*)",
+      "Bash(open /Users/jmelisba/personal/git/tab-cleaner-extension/history.html)",
+      "Bash(node:*)"
     ],
     "deny": [],
     "ask": []

@@ -1,4 +1,5 @@
-class HistorySearchPro {
+// HistoryGrep v2.0 - Fixed regex validation and CSP compliance
+class HistoryGrep {
     constructor() {
         this.titleRegexInput = document.getElementById('titleRegexInput');
         this.urlRegexInput = document.getElementById('urlRegexInput');
@@ -84,6 +85,23 @@ class HistorySearchPro {
                 await this.switchToTabOrOpen(url);
             }
         });
+
+        // Handle pagination clicks
+        this.pagination.addEventListener('click', (e) => {
+            if (e.target.classList.contains('pagination-btn') && !e.target.disabled) {
+                const page = parseInt(e.target.getAttribute('data-page'));
+                if (page && page > 0) {
+                    this.goToPage(page);
+                }
+            }
+        });
+
+        // Handle favicon image errors
+        this.resultsContainer.addEventListener('error', (e) => {
+            if (e.target.classList.contains('result-favicon')) {
+                e.target.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="%23ccc"/></svg>';
+            }
+        }, true);
     }
 
     validateRegex(inputElement, errorElement) {
@@ -275,12 +293,26 @@ class HistorySearchPro {
             return this.escapeHtml(text);
         }
 
+        // Validate regex pattern before using it
+        if (!this.isValidRegex(pattern)) {
+            return this.escapeHtml(text);
+        }
+
         try {
             const regex = new RegExp(pattern, 'gi');
             const escapedText = this.escapeHtml(text);
             return escapedText.replace(regex, '<mark>$&</mark>');
         } catch (error) {
             return this.escapeHtml(text);
+        }
+    }
+
+    isValidRegex(pattern) {
+        try {
+            new RegExp(pattern);
+            return true;
+        } catch (error) {
+            return false;
         }
     }
 
@@ -317,11 +349,10 @@ class HistorySearchPro {
         const timeDecayScore = item.timeDecayScore;
         const visitCountInRange = item.visitCountInRange;
 
-        // Extract domain for favicon
+        // Extract domain for favicon using Google's service
         let faviconUrl = '';
         try {
-            const urlObj = new URL(url);
-            faviconUrl = `${urlObj.protocol}//${urlObj.hostname}/favicon.ico`;
+            faviconUrl = `https://www.google.com/s2/favicons?sz=16&domain_url=${encodeURIComponent(url)}`;
         } catch (e) {
             faviconUrl = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="%23ccc"/></svg>';
         }
@@ -348,7 +379,6 @@ class HistorySearchPro {
             <div class="result-item">
                 <img src="${faviconUrl}"
                      class="result-favicon"
-                     onerror="this.src='data:image/svg+xml,<svg xmlns=&quot;http://www.w3.org/2000/svg&quot; viewBox=&quot;0 0 16 16&quot;><circle cx=&quot;8&quot; cy=&quot;8&quot; r=&quot;6&quot; fill=&quot;%23ccc&quot;/></svg>'"
                      alt="Site icon">
                 <div class="result-content">
                     <div class="result-title-line">
@@ -385,7 +415,7 @@ class HistorySearchPro {
 
         // Previous button
         paginationHTML += `
-            <button ${this.currentPage === 1 ? 'disabled' : ''} onclick="historySearch.goToPage(${this.currentPage - 1})">
+            <button ${this.currentPage === 1 ? 'disabled' : ''} data-page="${this.currentPage - 1}" class="pagination-btn">
                 Previous
             </button>
         `;
@@ -401,7 +431,7 @@ class HistorySearchPro {
 
         for (let i = startPage; i <= endPage; i++) {
             paginationHTML += `
-                <button class="${i === this.currentPage ? 'active' : ''}" onclick="historySearch.goToPage(${i})">
+                <button class="${i === this.currentPage ? 'active' : ''} pagination-btn" data-page="${i}">
                     ${i}
                 </button>
             `;
@@ -409,7 +439,7 @@ class HistorySearchPro {
 
         // Next button
         paginationHTML += `
-            <button ${this.currentPage === totalPages ? 'disabled' : ''} onclick="historySearch.goToPage(${this.currentPage + 1})">
+            <button ${this.currentPage === totalPages ? 'disabled' : ''} data-page="${this.currentPage + 1}" class="pagination-btn">
                 Next
             </button>
         `;
@@ -455,8 +485,9 @@ class HistorySearchPro {
     }
 }
 
-// Initialize the application
+// Initialize the application - v2.0
 let historySearch;
 document.addEventListener('DOMContentLoaded', function() {
-    historySearch = new HistorySearchPro();
+    console.log('HistoryGrep v2.0 - Initializing...');
+    historySearch = new HistoryGrep();
 });
