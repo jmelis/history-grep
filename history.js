@@ -1,7 +1,9 @@
 class HistorySearchPro {
     constructor() {
-        this.searchInput = document.getElementById('searchInput');
-        this.sortSelect = document.getElementById('sortSelect');
+        this.titleRegexInput = document.getElementById('titleRegexInput');
+        this.urlRegexInput = document.getElementById('urlRegexInput');
+        this.titleRegexError = document.getElementById('titleRegexError');
+        this.urlRegexError = document.getElementById('urlRegexError');
         this.resultsContainer = document.getElementById('resultsContainer');
         this.resultsInfo = document.getElementById('resultsInfo');
         this.resultsCount = document.getElementById('resultsCount');
@@ -25,18 +27,24 @@ class HistorySearchPro {
     }
 
     initializeEventListeners() {
-        // Search input with debouncing
-        this.searchInput.addEventListener('input', () => {
+        // Title regex input with debouncing and validation
+        this.titleRegexInput.addEventListener('input', () => {
+            this.validateRegex(this.titleRegexInput, this.titleRegexError);
             clearTimeout(this.searchTimeout);
             this.searchTimeout = setTimeout(() => {
                 this.performSearch();
             }, 300);
         });
 
-        // Sort select
-        this.sortSelect.addEventListener('change', () => {
-            this.sortAndDisplayResults();
+        // URL regex input with debouncing and validation
+        this.urlRegexInput.addEventListener('input', () => {
+            this.validateRegex(this.urlRegexInput, this.urlRegexError);
+            clearTimeout(this.searchTimeout);
+            this.searchTimeout = setTimeout(() => {
+                this.performSearch();
+            }, 300);
         });
+
 
         // Date filter buttons
         document.querySelectorAll('.date-filter-btn').forEach(btn => {
@@ -67,6 +75,60 @@ class HistorySearchPro {
                 this.performSearch();
             }
         });
+
+        // Handle result clicks for tab switching
+        this.resultsContainer.addEventListener('click', async (e) => {
+            if (e.target.classList.contains('result-title')) {
+                e.preventDefault();
+                const url = e.target.getAttribute('data-url');
+                await this.switchToTabOrOpen(url);
+            }
+        });
+    }
+
+    validateRegex(inputElement, errorElement) {
+        const pattern = inputElement.value.trim();
+
+        // Clear previous error state
+        inputElement.classList.remove('error');
+        errorElement.textContent = '';
+
+        // Empty pattern is valid (matches everything)
+        if (!pattern) {
+            return true;
+        }
+
+        try {
+            new RegExp(pattern, 'i');
+            return true;
+        } catch (error) {
+            inputElement.classList.add('error');
+            errorElement.textContent = `Invalid regex: ${error.message}`;
+            return false;
+        }
+    }
+
+    async switchToTabOrOpen(url) {
+        try {
+            // Query for existing tabs with this URL
+            const tabs = await new Promise((resolve) => {
+                chrome.tabs.query({ url: url }, resolve);
+            });
+
+            if (tabs.length > 0) {
+                // Switch to the first existing tab
+                const existingTab = tabs[0];
+                await chrome.tabs.update(existingTab.id, { active: true });
+                await chrome.windows.update(existingTab.windowId, { focused: true });
+            } else {
+                // Open in new tab
+                chrome.tabs.create({ url: url, active: true });
+            }
+        } catch (error) {
+            console.error('Error switching to tab:', error);
+            // Fallback to opening in new tab
+            chrome.tabs.create({ url: url, active: true });
+        }
     }
 
     initializeDateInputs() {
@@ -105,26 +167,36 @@ class HistorySearchPro {
     async performSearch() {
         this.showLoading();
 
-        const searchText = this.searchInput.value.trim();
+        const titlePattern = this.titleRegexInput.value.trim();
+        const urlPattern = this.urlRegexInput.value.trim();
         const { startTime, endTime } = this.getDateRange();
 
+        // Skip search if both patterns have invalid regex
+        if (!this.validateRegex(this.titleRegexInput, this.titleRegexError) ||
+            !this.validateRegex(this.urlRegexInput, this.urlRegexError)) {
+            this.showNoResults();
+            return;
+        }
+
         try {
+            // Get all history items in the date range
             const historyItems = await new Promise((resolve) => {
                 chrome.history.search({
-                    text: searchText,
+                    text: '', // Empty to get all items
                     startTime: startTime,
                     endTime: endTime,
-                    maxResults: 5000
+                    maxResults: 10000
                 }, resolve);
             });
 
-            // Get visit details for period-specific visit counts
-            if (this.sortSelect.value === 'visits-period') {
-                await this.enrichWithPeriodVisits(historyItems, startTime, endTime);
-            }
+            // Apply dual regex filtering
+            const filteredItems = this.dualRegexFilter(historyItems, titlePattern, urlPattern);
 
-            this.currentResults = historyItems;
-            this.sortAndDisplayResults();
+            // Calculate time-decay weighted scores for filtered items
+            const scoredItems = await this.calculateTimeDecayScores(filteredItems, startTime, endTime);
+
+            this.currentResults = scoredItems;
+            this.displayResults();
 
         } catch (error) {
             console.error('Search error:', error);
@@ -132,130 +204,94 @@ class HistorySearchPro {
         }
     }
 
-    async enrichWithPeriodVisits(historyItems, startTime, endTime) {
-        const visitPromises = historyItems.map(item =>
-            new Promise((resolve) => {
-                chrome.history.getVisits({ url: item.url }, (visits) => {
-                    const periodVisits = visits.filter(visit =>
-                        visit.visitTime >= startTime && visit.visitTime <= endTime
-                    );
-                    item.periodVisitCount = periodVisits.length;
-                    resolve();
-                });
-            })
-        );
+    dualRegexFilter(items, titlePattern, urlPattern) {
+        return items.filter(item => {
+            const title = item.title || '';
+            const url = item.url || '';
 
-        await Promise.all(visitPromises);
-    }
+            let titleMatch = true;
+            let urlMatch = true;
 
-    calculateRelevanceScore(item, searchText) {
-        if (!searchText) return 1;
-
-        const title = (item.title || '').toLowerCase();
-        const url = item.url.toLowerCase();
-        const search = searchText.toLowerCase();
-
-        let score = 0;
-
-        // Exact matches get highest score
-        if (title.includes(search) || url.includes(search)) {
-            score += 100;
-        }
-
-        // Word matches
-        const searchWords = search.split(' ').filter(w => w.length > 0);
-        searchWords.forEach(word => {
-            if (title.includes(word)) score += 50;
-            if (url.includes(word)) score += 30;
-        });
-
-        // Character similarity (simple fuzzy matching)
-        score += this.getStringSimilarity(title, search) * 20;
-        score += this.getStringSimilarity(url, search) * 10;
-
-        // Boost recent and frequently visited items
-        score += Math.log(item.visitCount + 1) * 5;
-
-        const daysSinceVisit = (Date.now() - item.lastVisitTime) / (1000 * 60 * 60 * 24);
-        score += Math.max(0, 10 - daysSinceVisit);
-
-        return Math.round(score);
-    }
-
-    getStringSimilarity(str1, str2) {
-        const longer = str1.length > str2.length ? str1 : str2;
-        const shorter = str1.length > str2.length ? str2 : str1;
-
-        if (longer.length === 0) return 1.0;
-
-        const distance = this.getLevenshteinDistance(longer, shorter);
-        return (longer.length - distance) / longer.length;
-    }
-
-    getLevenshteinDistance(str1, str2) {
-        const matrix = [];
-
-        for (let i = 0; i <= str2.length; i++) {
-            matrix[i] = [i];
-        }
-
-        for (let j = 0; j <= str1.length; j++) {
-            matrix[0][j] = j;
-        }
-
-        for (let i = 1; i <= str2.length; i++) {
-            for (let j = 1; j <= str1.length; j++) {
-                if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
-                    matrix[i][j] = matrix[i - 1][j - 1];
-                } else {
-                    matrix[i][j] = Math.min(
-                        matrix[i - 1][j - 1] + 1,
-                        matrix[i][j - 1] + 1,
-                        matrix[i - 1][j] + 1
-                    );
+            // Test title pattern if provided
+            if (titlePattern) {
+                try {
+                    const titleRegex = new RegExp(titlePattern, 'i');
+                    titleMatch = titleRegex.test(title);
+                } catch (error) {
+                    titleMatch = false;
                 }
             }
-        }
 
-        return matrix[str2.length][str1.length];
+            // Test URL pattern if provided
+            if (urlPattern) {
+                try {
+                    const urlRegex = new RegExp(urlPattern, 'i');
+                    urlMatch = urlRegex.test(url);
+                } catch (error) {
+                    urlMatch = false;
+                }
+            }
+
+            return titleMatch && urlMatch;
+        });
     }
 
-    sortAndDisplayResults() {
-        const searchText = this.searchInput.value.trim();
-        const sortBy = this.sortSelect.value;
+    async calculateTimeDecayScores(items, startTime, endTime) {
+        const timeRange = endTime - startTime;
 
-        let sortedResults = [...this.currentResults];
+        // Get visit details for all items in parallel
+        const visitPromises = items.map(async (item) => {
+            return new Promise((resolve) => {
+                chrome.history.getVisits({ url: item.url }, (visits) => {
+                    // Filter visits to the selected time range
+                    const rangeVisits = visits.filter(visit =>
+                        visit.visitTime >= startTime && visit.visitTime <= endTime
+                    );
 
-        // Calculate relevance scores for all items if needed
-        if (sortBy === 'relevance') {
-            sortedResults.forEach(item => {
-                item.relevanceScore = this.calculateRelevanceScore(item, searchText);
+                    // Calculate time-decay weighted score
+                    let score = 0;
+                    rangeVisits.forEach(visit => {
+                        // Calculate recency weight: 1.0 (most recent) to 0.0 (oldest)
+                        const ageInRange = endTime - visit.visitTime;
+                        const recencyWeight = timeRange > 0 ? 1.0 - (ageInRange / timeRange) : 1.0;
+                        score += recencyWeight;
+                    });
+
+                    item.timeDecayScore = score;
+                    item.visitCountInRange = rangeVisits.length;
+                    resolve(item);
+                });
             });
-        }
+        });
 
-        // Sort based on selected criteria
-        switch (sortBy) {
-            case 'relevance':
-                sortedResults.sort((a, b) => b.relevanceScore - a.relevanceScore);
-                break;
-            case 'recent':
-                sortedResults.sort((a, b) => b.lastVisitTime - a.lastVisitTime);
-                break;
-            case 'visits-all':
-                sortedResults.sort((a, b) => b.visitCount - a.visitCount);
-                break;
-            case 'visits-period':
-                sortedResults.sort((a, b) => (b.periodVisitCount || 0) - (a.periodVisitCount || 0));
-                break;
-        }
+        const scoredItems = await Promise.all(visitPromises);
 
-        this.displayedResults = sortedResults;
-        this.currentPage = 1;
-        this.displayResults();
+        // Sort by time-decay score descending
+        return scoredItems.sort((a, b) => b.timeDecayScore - a.timeDecayScore);
     }
+
+    highlightRegexMatches(text, pattern) {
+        if (!pattern || !text) {
+            return this.escapeHtml(text);
+        }
+
+        try {
+            const regex = new RegExp(pattern, 'gi');
+            const escapedText = this.escapeHtml(text);
+            return escapedText.replace(regex, '<mark>$&</mark>');
+        } catch (error) {
+            return this.escapeHtml(text);
+        }
+    }
+
+
+
 
     displayResults() {
         this.hideLoading();
+
+        this.displayedResults = this.currentResults;
+        this.currentPage = 1;
 
         if (this.displayedResults.length === 0) {
             this.showNoResults();
@@ -278,8 +314,8 @@ class HistorySearchPro {
         const url = item.url;
         const lastVisit = new Date(item.lastVisitTime).toLocaleString();
         const visitCount = item.visitCount;
-        const relevanceScore = item.relevanceScore;
-        const periodVisitCount = item.periodVisitCount;
+        const timeDecayScore = item.timeDecayScore;
+        const visitCountInRange = item.visitCountInRange;
 
         // Extract domain for favicon
         let faviconUrl = '';
@@ -290,31 +326,39 @@ class HistorySearchPro {
             faviconUrl = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="%23ccc"/></svg>';
         }
 
+        // Highlight regex matches in title and URL
+        const titlePattern = this.titleRegexInput.value.trim();
+        const urlPattern = this.urlRegexInput.value.trim();
+        const highlightedTitle = this.highlightRegexMatches(title, titlePattern);
+        const highlightedUrl = this.highlightRegexMatches(url, urlPattern);
+
         let metaItems = [
             `<span class="result-meta-item">Last visited: ${lastVisit}</span>`,
-            `<span class="result-meta-item">Visits: ${visitCount}</span>`
+            `<span class="result-meta-item">Total visits: ${visitCount}</span>`
         ];
 
-        if (this.sortSelect.value === 'visits-period' && periodVisitCount !== undefined) {
-            metaItems.push(`<span class="result-meta-item">Period visits: ${periodVisitCount}</span>`);
+        if (visitCountInRange !== undefined) {
+            metaItems.push(`<span class="result-meta-item">Visits in range: ${visitCountInRange}</span>`);
         }
 
-        if (this.sortSelect.value === 'relevance' && relevanceScore !== undefined && this.searchInput.value.trim()) {
-            metaItems.unshift(`<span class="result-meta-item"><span class="relevance-score">${relevanceScore}% match</span></span>`);
+        if (timeDecayScore !== undefined) {
+            metaItems.unshift(`<span class="result-meta-item"><span class="relevance-score">Score: ${timeDecayScore.toFixed(2)}</span></span>`);
         }
 
         return `
             <div class="result-item">
-                <div class="result-header">
-                    <img src="${faviconUrl}"
-                         class="result-favicon"
-                         onerror="this.src='data:image/svg+xml,<svg xmlns=&quot;http://www.w3.org/2000/svg&quot; viewBox=&quot;0 0 16 16&quot;><circle cx=&quot;8&quot; cy=&quot;8&quot; r=&quot;6&quot; fill=&quot;%23ccc&quot;/></svg>'"
-                         alt="Site icon">
-                    <a href="${url}" class="result-title" target="_blank">${this.escapeHtml(title)}</a>
-                </div>
-                <div class="result-url">${this.escapeHtml(url)}</div>
-                <div class="result-meta">
-                    ${metaItems.join('')}
+                <img src="${faviconUrl}"
+                     class="result-favicon"
+                     onerror="this.src='data:image/svg+xml,<svg xmlns=&quot;http://www.w3.org/2000/svg&quot; viewBox=&quot;0 0 16 16&quot;><circle cx=&quot;8&quot; cy=&quot;8&quot; r=&quot;6&quot; fill=&quot;%23ccc&quot;/></svg>'"
+                     alt="Site icon">
+                <div class="result-content">
+                    <div class="result-title-line">
+                        <a href="${url}" class="result-title" data-url="${url}">${highlightedTitle}</a>
+                    </div>
+                    <div class="result-meta-line">
+                        <span class="result-url">${highlightedUrl}</span>
+                        <span class="result-meta">${metaItems.join(' • ')}</span>
+                    </div>
                 </div>
             </div>
         `;
