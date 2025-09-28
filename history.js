@@ -13,14 +13,17 @@ class HistoryGrep {
         this.pagination = document.getElementById('pagination');
         this.customDateRange = document.getElementById('customDateRange');
         this.startDate = document.getElementById('startDate');
-        this.endDate = document.getElementById('endDate');
+        this.excludeOpenTabs = document.getElementById('excludeOpenTabs');
+        this.closeAllTabsBtn = document.getElementById('closeAllTabs');
 
         this.currentResults = [];
         this.displayedResults = [];
         this.currentPage = 1;
         this.resultsPerPage = 50;
-        this.selectedPeriod = '1';
+        this.selectedPeriod = '3';
+        this.selectedSort = 'lastVisit';
         this.searchTimeout = null;
+        this.openTabUrls = new Set();
 
         this.initializeEventListeners();
         this.initializeDateInputs();
@@ -64,17 +67,31 @@ class HistoryGrep {
             });
         });
 
-        // Custom date range inputs
+        // Custom date range input
         this.startDate.addEventListener('change', () => {
             if (this.selectedPeriod === 'custom') {
                 this.performSearch();
             }
         });
 
-        this.endDate.addEventListener('change', () => {
-            if (this.selectedPeriod === 'custom') {
+        // Sort filter buttons
+        document.querySelectorAll('.sort-filter-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.sort-filter-btn').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                this.selectedSort = e.target.dataset.sort;
                 this.performSearch();
-            }
+            });
+        });
+
+        // Exclude open tabs checkbox
+        this.excludeOpenTabs.addEventListener('change', () => {
+            this.performSearch();
+        });
+
+        // Close all tabs button
+        this.closeAllTabsBtn.addEventListener('click', () => {
+            this.closeAllUnpinnedTabs();
         });
 
         // Handle result clicks for tab switching
@@ -151,32 +168,27 @@ class HistoryGrep {
 
     initializeDateInputs() {
         const today = new Date();
-        const yesterday = new Date(today);
-        yesterday.setDate(yesterday.getDate() - 1);
+        const threeDaysAgo = new Date(today);
+        threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
 
-        this.endDate.value = today.toISOString().split('T')[0];
-        this.startDate.value = yesterday.toISOString().split('T')[0];
+        this.startDate.value = threeDaysAgo.toISOString().split('T')[0];
     }
 
     getDateRange() {
         const now = Date.now();
-        let startTime, endTime;
+        let startTime, endTime = now;
 
         if (this.selectedPeriod === 'custom') {
-            if (this.startDate.value && this.endDate.value) {
+            if (this.startDate.value) {
                 startTime = new Date(this.startDate.value).getTime();
-                endTime = new Date(this.endDate.value).getTime() + (24 * 60 * 60 * 1000) - 1;
             } else {
-                startTime = now - (24 * 60 * 60 * 1000); // Default to last day
-                endTime = now;
+                startTime = now - (3 * 24 * 60 * 60 * 1000); // Default to last 3 days
             }
         } else if (this.selectedPeriod === 'all') {
             startTime = 0;
-            endTime = now;
         } else {
             const days = parseInt(this.selectedPeriod);
             startTime = now - (days * 24 * 60 * 60 * 1000);
-            endTime = now;
         }
 
         return { startTime, endTime };
@@ -197,6 +209,11 @@ class HistoryGrep {
         }
 
         try {
+            // Get open tabs if excluding them
+            if (this.excludeOpenTabs.checked) {
+                await this.updateOpenTabUrls();
+            }
+
             // Get all history items in the date range
             const historyItems = await new Promise((resolve) => {
                 chrome.history.search({
@@ -208,10 +225,15 @@ class HistoryGrep {
             });
 
             // Apply dual regex filtering
-            const filteredItems = this.dualRegexFilter(historyItems, titlePattern, urlPattern);
+            let filteredItems = this.dualRegexFilter(historyItems, titlePattern, urlPattern);
 
-            // Calculate time-decay weighted scores for filtered items
-            const scoredItems = await this.calculateTimeDecayScores(filteredItems, startTime, endTime);
+            // Exclude open tabs if option is checked
+            if (this.excludeOpenTabs.checked) {
+                filteredItems = filteredItems.filter(item => !this.openTabUrls.has(item.url));
+            }
+
+            // Calculate scores for filtered items
+            const scoredItems = await this.calculateScores(filteredItems, startTime, endTime);
 
             this.currentResults = scoredItems;
             this.displayResults();
@@ -254,9 +276,7 @@ class HistoryGrep {
         });
     }
 
-    async calculateTimeDecayScores(items, startTime, endTime) {
-        const timeRange = endTime - startTime;
-
+    async calculateScores(items, startTime, endTime) {
         // Get visit details for all items in parallel
         const visitPromises = items.map(async (item) => {
             return new Promise((resolve) => {
@@ -266,16 +286,12 @@ class HistoryGrep {
                         visit.visitTime >= startTime && visit.visitTime <= endTime
                     );
 
-                    // Calculate time-decay weighted score
-                    let score = 0;
-                    rangeVisits.forEach(visit => {
-                        // Calculate recency weight: 1.0 (most recent) to 0.0 (oldest)
-                        const ageInRange = endTime - visit.visitTime;
-                        const recencyWeight = timeRange > 0 ? 1.0 - (ageInRange / timeRange) : 1.0;
-                        score += recencyWeight;
-                    });
+                    // Find the most recent visit in range
+                    const mostRecentVisit = rangeVisits.reduce((latest, visit) => {
+                        return visit.visitTime > latest.visitTime ? visit : latest;
+                    }, { visitTime: 0 });
 
-                    item.timeDecayScore = score;
+                    item.lastVisitInRange = mostRecentVisit.visitTime;
                     item.visitCountInRange = rangeVisits.length;
                     resolve(item);
                 });
@@ -284,8 +300,18 @@ class HistoryGrep {
 
         const scoredItems = await Promise.all(visitPromises);
 
-        // Sort by time-decay score descending
-        return scoredItems.sort((a, b) => b.timeDecayScore - a.timeDecayScore);
+        // Sort based on selected sort option
+        if (this.selectedSort === 'lastVisit') {
+            return scoredItems.sort((a, b) => b.lastVisitInRange - a.lastVisitInRange);
+        } else { // visitsInRange
+            return scoredItems.sort((a, b) => {
+                // First by visit count in range, then by most recent visit as tiebreaker
+                if (b.visitCountInRange !== a.visitCountInRange) {
+                    return b.visitCountInRange - a.visitCountInRange;
+                }
+                return b.lastVisitInRange - a.lastVisitInRange;
+            });
+        }
     }
 
     highlightRegexMatches(text, pattern) {
@@ -344,9 +370,7 @@ class HistoryGrep {
     createResultHTML(item) {
         const title = item.title || 'Untitled';
         const url = item.url;
-        const lastVisit = new Date(item.lastVisitTime).toLocaleString();
-        const visitCount = item.visitCount;
-        const timeDecayScore = item.timeDecayScore;
+        const lastVisitInRange = new Date(item.lastVisitInRange).toLocaleString();
         const visitCountInRange = item.visitCountInRange;
 
         // Extract domain for favicon using Google's service
@@ -364,15 +388,11 @@ class HistoryGrep {
         const highlightedUrl = this.highlightRegexMatches(url, urlPattern);
 
         let metaItems = [
-            `<span class="result-meta-item">Last visited: ${lastVisit}</span>`
+            `<span class="result-meta-item">Last visited: ${lastVisitInRange}</span>`
         ];
 
         if (visitCountInRange !== undefined) {
             metaItems.push(`<span class="result-meta-item">Visits in period: ${visitCountInRange}</span>`);
-        }
-
-        if (timeDecayScore !== undefined) {
-            metaItems.unshift(`<span class="result-meta-item"><span class="relevance-score">Score: ${timeDecayScore.toFixed(2)}</span></span>`);
         }
 
         return `
@@ -476,6 +496,51 @@ class HistoryGrep {
         this.resultsInfo.style.display = 'none';
         this.noResults.style.display = 'block';
         this.pagination.style.display = 'none';
+    }
+
+    async updateOpenTabUrls() {
+        try {
+            const tabs = await new Promise((resolve) => {
+                chrome.tabs.query({}, resolve);
+            });
+            this.openTabUrls = new Set(tabs.map(tab => tab.url));
+        } catch (error) {
+            console.error('Error getting open tabs:', error);
+            this.openTabUrls = new Set();
+        }
+    }
+
+    async closeAllUnpinnedTabs() {
+        try {
+            const windows = await new Promise((resolve) => {
+                chrome.windows.getAll({ populate: true }, resolve);
+            });
+
+            const tabsToClose = [];
+            windows.forEach(window => {
+                window.tabs.forEach(tab => {
+                    if (!tab.pinned) {
+                        tabsToClose.push(tab.id);
+                    }
+                });
+            });
+
+            if (tabsToClose.length > 0) {
+                await new Promise((resolve) => {
+                    chrome.tabs.remove(tabsToClose, resolve);
+                });
+
+                // Update open tabs list after closing
+                await this.updateOpenTabUrls();
+
+                // Refresh search if excluding open tabs
+                if (this.excludeOpenTabs.checked) {
+                    this.performSearch();
+                }
+            }
+        } catch (error) {
+            console.error('Error closing tabs:', error);
+        }
     }
 
     escapeHtml(text) {
