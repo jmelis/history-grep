@@ -333,12 +333,11 @@ class HistorySearchPro {
         const highlightedUrl = this.highlightRegexMatches(url, urlPattern);
 
         let metaItems = [
-            `<span class="result-meta-item">Last visited: ${lastVisit}</span>`,
-            `<span class="result-meta-item">Total visits: ${visitCount}</span>`
+            `<span class="result-meta-item">Last visited: ${lastVisit}</span>`
         ];
 
         if (visitCountInRange !== undefined) {
-            metaItems.push(`<span class="result-meta-item">Visits in range: ${visitCountInRange}</span>`);
+            metaItems.push(`<span class="result-meta-item">Visits in period: ${visitCountInRange}</span>`);
         }
 
         if (timeDecayScore !== undefined) {
