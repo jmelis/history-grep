@@ -15,6 +15,7 @@ class HistoryGrep {
         this.startDate = document.getElementById('startDate');
         this.excludeOpenTabs = document.getElementById('excludeOpenTabs');
         this.closeAllTabsBtn = document.getElementById('closeAllTabs');
+        this.consolidateTabsBtn = document.getElementById('consolidateTabs');
         this.settingsBtn = document.getElementById('settingsBtn');
         this.settingsModal = document.getElementById('settingsModal');
         this.closeSettingsBtn = document.getElementById('closeSettingsBtn');
@@ -104,6 +105,11 @@ class HistoryGrep {
         // Close all tabs button
         this.closeAllTabsBtn.addEventListener('click', () => {
             this.closeAllUnpinnedTabs();
+        });
+
+        // Consolidate tabs button
+        this.consolidateTabsBtn.addEventListener('click', () => {
+            this.consolidateTabsToCurrentWindow();
         });
 
         // Settings button
@@ -598,6 +604,57 @@ class HistoryGrep {
             }
         } catch (error) {
             console.error('Error closing tabs:', error);
+        }
+    }
+
+    async consolidateTabsToCurrentWindow() {
+        try {
+            // Get the current window (where the user clicked the button)
+            const currentWindow = await new Promise((resolve) => {
+                chrome.windows.getCurrent({ populate: true }, resolve);
+            });
+
+            // Get all windows with their tabs
+            const allWindows = await new Promise((resolve) => {
+                chrome.windows.getAll({ populate: true }, resolve);
+            });
+
+            // Find all tabs from other windows that aren't pinned
+            const tabsToMove = [];
+            allWindows.forEach(window => {
+                // Skip the current window
+                if (window.id === currentWindow.id) {
+                    return;
+                }
+
+                window.tabs.forEach(tab => {
+                    // Only move unpinned tabs (to preserve pinned tabs in their original window)
+                    if (!tab.pinned) {
+                        tabsToMove.push(tab.id);
+                    }
+                });
+            });
+
+            // Move all collected tabs to the current window
+            if (tabsToMove.length > 0) {
+                await new Promise((resolve) => {
+                    chrome.tabs.move(tabsToMove, {
+                        windowId: currentWindow.id,
+                        index: -1  // Move to the end
+                    }, resolve);
+                });
+
+                // Update open tabs list after moving
+                await this.updateOpenTabUrls();
+
+                // Show feedback to user
+                console.log(`Consolidated ${tabsToMove.length} tabs to current window`);
+            } else {
+                console.log('No tabs to consolidate - all tabs are already in the current window or are pinned');
+            }
+
+        } catch (error) {
+            console.error('Error consolidating tabs:', error);
         }
     }
 

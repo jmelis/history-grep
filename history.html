@@ -239,6 +239,29 @@
             transform: translateY(1px);
         }
 
+        .consolidate-tabs-btn {
+            padding: 8px 16px;
+            border: 1px solid #28a745;
+            background: #28a745;
+            color: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .consolidate-tabs-btn:hover {
+            background: #218838;
+            border-color: #218838;
+        }
+
+        .consolidate-tabs-btn:active {
+            background: #1e7e34;
+            border-color: #1e7e34;
+            transform: translateY(1px);
+        }
+
         .settings-btn {
             padding: 8px 16px;
             border: 1px solid #6c757d;
@@ -670,6 +693,7 @@
                 <div class="filter-group">
                     <div class="action-buttons">
                         <button class="close-tabs-btn" id="closeAllTabs">Close All Tabs</button>
+                        <button class="consolidate-tabs-btn" id="consolidateTabs">Consolidate Tabs</button>
                         <button class="settings-btn" id="settingsBtn">Settings</button>
                     </div>
                 </div>
