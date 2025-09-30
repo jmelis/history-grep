@@ -40,6 +40,8 @@ class HistoryGrep {
         this.initializeDateInputs();
         this.loadSettings().then(() => {
             this.performSearch();
+            // Auto-focus the title search input for keyboard accessibility
+            this.titleRegexInput.focus();
         });
     }
 
@@ -583,7 +585,10 @@ class HistoryGrep {
             const tabsToClose = [];
             windows.forEach(window => {
                 window.tabs.forEach(tab => {
-                    if (!tab.pinned && !this.matchesAnyPattern(tab.url, this.settings.closeTabsExcludePatterns)) {
+                    // Exclude pinned tabs, grouped tabs, and tabs matching exclusion patterns
+                    if (!tab.pinned &&
+                        tab.groupId === -1 &&
+                        !this.matchesAnyPattern(tab.url, this.settings.closeTabsExcludePatterns)) {
                         tabsToClose.push(tab.id);
                     }
                 });
