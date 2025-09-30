@@ -22,6 +22,8 @@ class HistoryGrep {
         this.saveSettingsBtn = document.getElementById('saveSettingsBtn');
         this.closeTabsExcludeList = document.getElementById('closeTabsExcludeList');
         this.searchResultsExcludeList = document.getElementById('searchResultsExcludeList');
+        this.groupingRulesList = document.getElementById('groupingRulesList');
+        this.addGroupingRuleBtn = document.getElementById('addGroupingRule');
 
         this.currentResults = [];
         this.displayedResults = [];
@@ -33,7 +35,29 @@ class HistoryGrep {
         this.openTabUrls = new Set();
         this.settings = {
             closeTabsExcludePatterns: [],
-            searchResultsExcludePatterns: []
+            searchResultsExcludePatterns: [],
+            urlGroupingRules: [
+                {
+                    pattern: "docs\\.google\\.com",
+                    groupBy: "fragment",
+                    description: "Google Docs - group by document"
+                },
+                {
+                    pattern: "github\\.com/.+/issues",
+                    groupBy: "fragment",
+                    description: "GitHub Issues - group by issue page"
+                },
+                {
+                    pattern: "stackoverflow\\.com/questions",
+                    groupBy: "fragment",
+                    description: "Stack Overflow - group by question"
+                },
+                {
+                    pattern: ".*",
+                    groupBy: "none",
+                    description: "Default - no grouping"
+                }
+            ]
         };
 
         this.initializeEventListeners();
@@ -144,6 +168,11 @@ class HistoryGrep {
             });
         });
 
+        // Add grouping rule button
+        this.addGroupingRuleBtn.addEventListener('click', () => {
+            this.addGroupingRule();
+        });
+
         // Handle result clicks for tab switching and copy URL
         this.resultsContainer.addEventListener('click', async (e) => {
             if (e.target.classList.contains('result-title')) {
@@ -154,6 +183,13 @@ class HistoryGrep {
                 e.preventDefault();
                 const url = e.target.closest('.copy-url-btn').getAttribute('data-url');
                 await this.copyToClipboard(url);
+            } else if (e.target.closest('.group-toggle-btn')) {
+                e.preventDefault();
+                this.toggleGroupedUrls(e.target.closest('.group-toggle-btn'));
+            } else if (e.target.classList.contains('grouped-url-link')) {
+                e.preventDefault();
+                const url = e.target.getAttribute('href');
+                await this.switchToTabOrOpen(url);
             }
         });
 
@@ -296,7 +332,10 @@ class HistoryGrep {
             // Calculate scores for filtered items
             const scoredItems = await this.calculateScores(filteredItems, startTime, endTime);
 
-            this.currentResults = scoredItems;
+            // Group results by title and URL base (without fragment)
+            const groupedResults = this.groupResults(scoredItems);
+
+            this.currentResults = groupedResults;
             this.displayResults();
 
         } catch (error) {
@@ -367,6 +406,135 @@ class HistoryGrep {
         } else { // visitsInRange
             return scoredItems.sort((a, b) => {
                 // First by visit count in range, then by most recent visit as tiebreaker
+                if (b.visitCountInRange !== a.visitCountInRange) {
+                    return b.visitCountInRange - a.visitCountInRange;
+                }
+                return b.lastVisitInRange - a.lastVisitInRange;
+            });
+        }
+    }
+
+    applyGroupingRules(url) {
+        // Safety check: ensure urlGroupingRules exists
+        if (!this.settings.urlGroupingRules || !Array.isArray(this.settings.urlGroupingRules)) {
+            return url; // No grouping if rules are not available
+        }
+
+        // Check each grouping rule in order (first match wins)
+        for (const rule of this.settings.urlGroupingRules) {
+            try {
+                const regex = new RegExp(rule.pattern, 'i');
+                if (regex.test(url)) {
+                    return this.processUrlByGroupType(url, rule.groupBy);
+                }
+            } catch (error) {
+                // Invalid regex pattern, skip this rule
+                console.warn('Invalid grouping rule pattern:', rule.pattern, error);
+                continue;
+            }
+        }
+
+        // If no rules match, return original URL (no grouping)
+        return url;
+    }
+
+    processUrlByGroupType(url, groupType) {
+        try {
+            const urlObj = new URL(url);
+
+            switch (groupType) {
+                case 'fragment':
+                    // Remove fragment (everything after #)
+                    return url.split('#')[0];
+
+                case 'query':
+                    // Remove query parameters (everything after ?)
+                    return url.split('?')[0];
+
+                case 'path-segment':
+                    // Remove last path segment
+                    const pathParts = urlObj.pathname.split('/').filter(part => part);
+                    if (pathParts.length > 0) {
+                        pathParts.pop(); // Remove last segment
+                        urlObj.pathname = '/' + pathParts.join('/');
+                        return urlObj.toString();
+                    }
+                    return url;
+
+                case 'subdomain':
+                    // Group by main domain (remove subdomain)
+                    const hostParts = urlObj.hostname.split('.');
+                    if (hostParts.length > 2) {
+                        const mainDomain = hostParts.slice(-2).join('.');
+                        urlObj.hostname = mainDomain;
+                        return urlObj.toString();
+                    }
+                    return url;
+
+                case 'none':
+                default:
+                    // No grouping
+                    return url;
+            }
+        } catch (error) {
+            // Invalid URL, return as-is
+            console.warn('Invalid URL for grouping:', url, error);
+            return url;
+        }
+    }
+
+    groupResults(items) {
+        const groups = new Map();
+
+        items.forEach(item => {
+            // Create grouping key: title + processed URL based on rules
+            const title = item.title || 'Untitled';
+            const processedUrl = this.applyGroupingRules(item.url);
+            const groupKey = `${title}|${processedUrl}`;
+
+            if (groups.has(groupKey)) {
+                const group = groups.get(groupKey);
+                // Merge visit data
+                group.visitCountInRange += item.visitCountInRange;
+                group.totalVisitCount += (item.visitCount || 0);
+
+                // Keep the most recent visit time
+                if (item.lastVisitInRange > group.lastVisitInRange) {
+                    group.lastVisitInRange = item.lastVisitInRange;
+                    group.lastVisitTime = item.lastVisitTime;
+                }
+
+                // Add this item's URL to the grouped URLs array
+                group.groupedUrls.push({
+                    url: item.url,
+                    visitCount: item.visitCountInRange,
+                    lastVisit: item.lastVisitInRange
+                });
+            } else {
+                // First item for this group
+                const groupedItem = {
+                    ...item,
+                    url: processedUrl, // Use processed URL based on grouping rules
+                    totalVisitCount: item.visitCount || 0,
+                    groupedUrls: [{
+                        url: item.url,
+                        visitCount: item.visitCountInRange,
+                        lastVisit: item.lastVisitInRange
+                    }],
+                    isGrouped: true
+                };
+                groups.set(groupKey, groupedItem);
+            }
+        });
+
+        // Convert map to array and sort grouped results
+        const groupedArray = Array.from(groups.values());
+
+        // Sort based on selected sort option (same logic as before)
+        if (this.selectedSort === 'lastVisit') {
+            return groupedArray.sort((a, b) => b.lastVisitInRange - a.lastVisitInRange);
+        } else { // visitsInRange
+            return groupedArray.sort((a, b) => {
                 if (b.visitCountInRange !== a.visitCountInRange) {
                     return b.visitCountInRange - a.visitCountInRange;
                 }
@@ -456,14 +624,49 @@ class HistoryGrep {
             metaItems.push(`<span class="result-meta-item">Visits in period: ${visitCountInRange}</span>`);
         }
 
+        // Add grouping information if this is a grouped result
+        let groupInfo = '';
+        if (item.isGrouped && item.groupedUrls && item.groupedUrls.length > 1) {
+            const groupCount = item.groupedUrls.length;
+            metaItems.push(`<span class="result-meta-item group-indicator">${groupCount} similar URLs grouped</span>`);
+
+            // Create expandable list of grouped URLs
+            const groupedUrlsList = item.groupedUrls
+                .sort((a, b) => b.lastVisit - a.lastVisit) // Sort by most recent visit
+                .map(urlItem => {
+                    const urlLastVisit = new Date(urlItem.lastVisit).toLocaleString();
+                    const urlHighlighted = this.highlightRegexMatches(urlItem.url, urlPattern);
+                    return `
+                        <div class="grouped-url-item">
+                            <a href="${urlItem.url}" class="grouped-url-link">${urlHighlighted}</a>
+                            <span class="grouped-url-meta">Visits: ${urlItem.visitCount} • Last: ${urlLastVisit}</span>
+                        </div>
+                    `;
+                }).join('');
+
+            groupInfo = `
+                <div class="grouped-urls-container" style="display: none;">
+                    <div class="grouped-urls-header">Similar URLs:</div>
+                    <div class="grouped-urls-list">${groupedUrlsList}</div>
+                </div>
+            `;
+        }
+
         return `
-            <div class="result-item">
+            <div class="result-item ${item.isGrouped && item.groupedUrls && item.groupedUrls.length > 1 ? 'grouped-result' : ''}">
                 <img src="${faviconUrl}"
                      class="result-favicon"
                      alt="Site icon">
                 <div class="result-content">
                     <div class="result-title-line">
                         <a href="${url}" class="result-title" data-url="${url}">${highlightedTitle}</a>
+                        ${item.isGrouped && item.groupedUrls && item.groupedUrls.length > 1 ? `
+                            <button class="group-toggle-btn" title="Show/hide similar URLs">
+                                <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+                                    <path d="M7 10l5 5 5-5z"/>
+                                </svg>
+                            </button>
+                        ` : ''}
                     </div>
                     <div class="result-meta-line">
                         <span class="result-url">${highlightedUrl}</span>
@@ -474,6 +677,7 @@ class HistoryGrep {
                         </button>
                         <span class="result-meta">${metaItems.join(' • ')}</span>
                     </div>
+                    ${groupInfo}
                 </div>
             </div>
         `;
@@ -720,7 +924,29 @@ class HistoryGrep {
             const result = await new Promise((resolve) => {
                 chrome.storage.sync.get({
                     closeTabsExcludePatterns: [],
-                    searchResultsExcludePatterns: []
+                    searchResultsExcludePatterns: [],
+                    urlGroupingRules: [
+                        {
+                            pattern: "docs\\.google\\.com",
+                            groupBy: "fragment",
+                            description: "Google Docs - group by document"
+                        },
+                        {
+                            pattern: "github\\.com/.+/issues",
+                            groupBy: "fragment",
+                            description: "GitHub Issues - group by issue page"
+                        },
+                        {
+                            pattern: "stackoverflow\\.com/questions",
+                            groupBy: "fragment",
+                            description: "Stack Overflow - group by question"
+                        },
+                        {
+                            pattern: ".*",
+                            groupBy: "none",
+                            description: "Default - no grouping"
+                        }
+                    ]
                 }, resolve);
             });
             this.settings = result;
@@ -751,6 +977,7 @@ class HistoryGrep {
     populateSettingsUI() {
         this.populatePatternList('closeTabsExcludeList', this.settings.closeTabsExcludePatterns);
         this.populatePatternList('searchResultsExcludeList', this.settings.searchResultsExcludePatterns);
+        this.populateGroupingRulesList();
     }
 
     populatePatternList(listId, patterns) {
@@ -790,10 +1017,65 @@ class HistoryGrep {
         list.appendChild(patternItem);
     }
 
+    populateGroupingRulesList() {
+        this.groupingRulesList.innerHTML = '';
+
+        // Safety check: ensure urlGroupingRules exists
+        if (!this.settings.urlGroupingRules || !Array.isArray(this.settings.urlGroupingRules)) {
+            this.settings.urlGroupingRules = [];
+        }
+
+        this.settings.urlGroupingRules.forEach((rule, index) => {
+            this.addGroupingRuleToList(rule, index);
+        });
+
+        // Always add one empty row for new entries
+        if (this.settings.urlGroupingRules.length === 0) {
+            this.addGroupingRuleToList({pattern: '', groupBy: 'none', description: ''}, 0);
+        }
+    }
+
+    addGroupingRule() {
+        // Safety check: ensure urlGroupingRules exists
+        if (!this.settings.urlGroupingRules || !Array.isArray(this.settings.urlGroupingRules)) {
+            this.settings.urlGroupingRules = [];
+        }
+
+        const newRule = {pattern: '', groupBy: 'fragment', description: ''};
+        const index = this.settings.urlGroupingRules.length;
+        this.addGroupingRuleToList(newRule, index);
+    }
+
+    addGroupingRuleToList(rule, index) {
+        const ruleItem = document.createElement('div');
+        ruleItem.className = 'grouping-rule-item';
+
+        ruleItem.innerHTML = `
+            <input type="text" class="rule-pattern" value="${rule.pattern}" placeholder="e.g. docs\\.google\\.com" data-index="${index}">
+            <select class="rule-type" data-index="${index}">
+                <option value="fragment" ${rule.groupBy === 'fragment' ? 'selected' : ''}>Remove Fragment (#)</option>
+                <option value="query" ${rule.groupBy === 'query' ? 'selected' : ''}>Remove Query (?)</option>
+                <option value="path-segment" ${rule.groupBy === 'path-segment' ? 'selected' : ''}>Remove Last Path</option>
+                <option value="none" ${rule.groupBy === 'none' ? 'selected' : ''}>No Grouping</option>
+            </select>
+            <input type="text" class="rule-description" value="${rule.description}" placeholder="Description" data-index="${index}">
+            <button class="remove-rule-btn" data-index="${index}">×</button>
+        `;
+
+        // Add event listeners
+        const removeBtn = ruleItem.querySelector('.remove-rule-btn');
+        removeBtn.addEventListener('click', () => {
+            ruleItem.remove();
+        });
+
+        this.groupingRulesList.appendChild(ruleItem);
+    }
+
     saveSettings() {
         // Collect patterns from UI
         this.settings.closeTabsExcludePatterns = this.collectPatternsFromList('closeTabsExcludeList');
         this.settings.searchResultsExcludePatterns = this.collectPatternsFromList('searchResultsExcludeList');
+        this.settings.urlGroupingRules = this.collectGroupingRulesFromList();
 
         // Save to storage
         this.saveSettingsToStorage();
@@ -818,6 +1100,46 @@ class HistoryGrep {
         });
 
         return patterns;
+    }
+
+    collectGroupingRulesFromList() {
+        const ruleItems = this.groupingRulesList.querySelectorAll('.grouping-rule-item');
+        const rules = [];
+
+        ruleItems.forEach(item => {
+            const pattern = item.querySelector('.rule-pattern').value.trim();
+            const groupBy = item.querySelector('.rule-type').value;
+            const description = item.querySelector('.rule-description').value.trim();
+
+            if (pattern) {
+                rules.push({
+                    pattern: pattern,
+                    groupBy: groupBy,
+                    description: description || `${groupBy} grouping for ${pattern}`
+                });
+            }
+        });
+
+        return rules;
+    }
+
+    toggleGroupedUrls(toggleBtn) {
+        const resultItem = toggleBtn.closest('.result-item');
+        const groupedContainer = resultItem.querySelector('.grouped-urls-container');
+
+        if (groupedContainer) {
+            const isCurrentlyVisible = groupedContainer.style.display !== 'none';
+
+            if (isCurrentlyVisible) {
+                // Hide the grouped URLs
+                groupedContainer.style.display = 'none';
+                toggleBtn.classList.remove('expanded');
+            } else {
+                // Show the grouped URLs
+                groupedContainer.style.display = 'block';
+                toggleBtn.classList.add('expanded');
+            }
+        }
     }
 
     escapeHtml(text) {
