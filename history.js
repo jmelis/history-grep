@@ -14,21 +14,6 @@ class HistoryGrep {
         this.customDateRange = document.getElementById('customDateRange');
         this.startDate = document.getElementById('startDate');
         this.excludeOpenTabs = document.getElementById('excludeOpenTabs');
-        this.closeAllTabsBtn = document.getElementById('closeAllTabs');
-        this.consolidateTabsBtn = document.getElementById('consolidateTabs');
-        this.settingsBtn = document.getElementById('settingsBtn');
-        this.mainPage = document.getElementById('mainPage');
-        this.settingsPage = document.getElementById('settingsPage');
-        this.backToSearchBtn = document.getElementById('backToSearchBtn');
-        this.saveSettingsBtn = document.getElementById('saveSettingsBtn');
-        this.cancelSettingsBtn = document.getElementById('cancelSettingsBtn');
-        this.yamlEditor = document.getElementById('yamlEditor');
-        this.yamlStatus = document.getElementById('yamlStatus');
-        this.loadTemplateBtn = document.getElementById('loadTemplateBtn');
-        this.validateYamlBtn = document.getElementById('validateYamlBtn');
-        this.exportConfigBtn = document.getElementById('exportConfigBtn');
-        this.importConfigBtn = document.getElementById('importConfigBtn');
-        this.importConfigFile = document.getElementById('importConfigFile');
 
         this.currentResults = [];
         this.displayedResults = [];
@@ -39,7 +24,6 @@ class HistoryGrep {
         this.searchTimeout = null;
         this.openTabUrls = new Set();
         this.settings = {
-            closeTabsExcludePatterns: [],
             searchResultsExcludePatterns: [],
             urlGroupingRules: [
                 {
@@ -64,8 +48,6 @@ class HistoryGrep {
                 }
             ]
         };
-
-        this.yamlValidationTimeout = null;
 
         this.initializeEventListeners();
         this.initializeDateInputs();
@@ -134,79 +116,6 @@ class HistoryGrep {
         this.excludeOpenTabs.addEventListener('change', () => {
             this.performSearch();
         });
-
-        // Close all tabs button
-        this.closeAllTabsBtn.addEventListener('click', () => {
-            this.closeAllUnpinnedTabs();
-        });
-
-        // Consolidate tabs button
-        this.consolidateTabsBtn.addEventListener('click', () => {
-            this.consolidateTabsToCurrentWindow();
-        });
-
-        // Settings button
-        this.settingsBtn.addEventListener('click', () => {
-            this.showSettingsPage();
-        });
-
-        // Back to search button
-        if (this.backToSearchBtn) {
-            this.backToSearchBtn.addEventListener('click', () => {
-                this.showMainPage();
-            });
-        }
-
-        // Cancel settings button
-        if (this.cancelSettingsBtn) {
-            this.cancelSettingsBtn.addEventListener('click', () => {
-                this.showMainPage();
-            });
-        }
-
-        // Save settings button
-        if (this.saveSettingsBtn) {
-            this.saveSettingsBtn.addEventListener('click', () => {
-                this.saveSettings();
-            });
-        }
-
-
-        // YAML editor buttons
-        if (this.loadTemplateBtn) {
-            this.loadTemplateBtn.addEventListener('click', () => {
-                this.loadYamlTemplate();
-            });
-        }
-
-        if (this.validateYamlBtn) {
-            this.validateYamlBtn.addEventListener('click', () => {
-                this.validateYaml();
-            });
-        }
-
-        if (this.exportConfigBtn) {
-            this.exportConfigBtn.addEventListener('click', () => {
-                this.exportYamlConfig();
-            });
-        }
-
-        if (this.importConfigBtn && this.importConfigFile) {
-            this.importConfigBtn.addEventListener('click', () => {
-                this.importConfigFile.click();
-            });
-
-            this.importConfigFile.addEventListener('change', (e) => {
-                this.importYamlConfig(e);
-            });
-        }
-
-        // YAML editor validation on change
-        if (this.yamlEditor) {
-            this.yamlEditor.addEventListener('input', () => {
-                this.validateYamlDebounced();
-            });
-        }
 
         // Handle result clicks for tab switching and copy URL
         this.resultsContainer.addEventListener('click', async (e) => {
@@ -820,93 +729,6 @@ class HistoryGrep {
         }
     }
 
-    async closeAllUnpinnedTabs() {
-        try {
-            const windows = await new Promise((resolve) => {
-                chrome.windows.getAll({ populate: true }, resolve);
-            });
-
-            const tabsToClose = [];
-            windows.forEach(window => {
-                window.tabs.forEach(tab => {
-                    // Exclude pinned tabs, grouped tabs, and tabs matching exclusion patterns
-                    if (!tab.pinned &&
-                        tab.groupId === -1 &&
-                        !this.matchesAnyPattern(tab.url, this.settings.closeTabsExcludePatterns)) {
-                        tabsToClose.push(tab.id);
-                    }
-                });
-            });
-
-            if (tabsToClose.length > 0) {
-                await new Promise((resolve) => {
-                    chrome.tabs.remove(tabsToClose, resolve);
-                });
-
-                // Update open tabs list after closing
-                await this.updateOpenTabUrls();
-
-                // Refresh search if excluding open tabs
-                if (this.excludeOpenTabs.checked) {
-                    this.performSearch();
-                }
-            }
-        } catch (error) {
-            console.error('Error closing tabs:', error);
-        }
-    }
-
-    async consolidateTabsToCurrentWindow() {
-        try {
-            // Get the current window (where the user clicked the button)
-            const currentWindow = await new Promise((resolve) => {
-                chrome.windows.getCurrent({ populate: true }, resolve);
-            });
-
-            // Get all windows with their tabs
-            const allWindows = await new Promise((resolve) => {
-                chrome.windows.getAll({ populate: true }, resolve);
-            });
-
-            // Find all tabs from other windows that aren't pinned
-            const tabsToMove = [];
-            allWindows.forEach(window => {
-                // Skip the current window
-                if (window.id === currentWindow.id) {
-                    return;
-                }
-
-                window.tabs.forEach(tab => {
-                    // Only move unpinned tabs (to preserve pinned tabs in their original window)
-                    if (!tab.pinned) {
-                        tabsToMove.push(tab.id);
-                    }
-                });
-            });
-
-            // Move all collected tabs to the current window
-            if (tabsToMove.length > 0) {
-                await new Promise((resolve) => {
-                    chrome.tabs.move(tabsToMove, {
-                        windowId: currentWindow.id,
-                        index: -1  // Move to the end
-                    }, resolve);
-                });
-
-                // Update open tabs list after moving
-                await this.updateOpenTabUrls();
-
-                // Show feedback to user
-                console.log(`Consolidated ${tabsToMove.length} tabs to current window`);
-            } else {
-                console.log('No tabs to consolidate - all tabs are already in the current window or are pinned');
-            }
-
-        } catch (error) {
-            console.error('Error consolidating tabs:', error);
-        }
-    }
-
     async copyToClipboard(text) {
         try {
             await navigator.clipboard.writeText(text);
@@ -963,7 +785,6 @@ class HistoryGrep {
         try {
             const result = await new Promise((resolve) => {
                 chrome.storage.sync.get({
-                    closeTabsExcludePatterns: [],
                     searchResultsExcludePatterns: [],
                     urlGroupingRules: [
                         {
@@ -1005,60 +826,6 @@ class HistoryGrep {
         }
     }
 
-    showSettingsPage() {
-        if (this.settingsPage && this.mainPage) {
-            this.populateSettingsUI();
-            this.mainPage.style.display = 'none';
-            this.settingsPage.style.display = 'block';
-        }
-    }
-
-    showMainPage() {
-        if (this.settingsPage && this.mainPage) {
-            this.settingsPage.style.display = 'none';
-            this.mainPage.style.display = 'block';
-        }
-    }
-
-    populateSettingsUI() {
-        if (this.yamlEditor) {
-            // Populate YAML editor with current settings
-            const yamlContent = this.settingsToYaml(this.settings);
-            this.yamlEditor.value = yamlContent;
-            this.validateYaml(false);
-        }
-    }
-
-
-    saveSettings() {
-        // Validate YAML before saving
-        if (!this.validateYaml()) {
-            this.updateYamlStatus('Please fix validation errors before saving', 'invalid');
-            return;
-        }
-
-        try {
-            // Parse YAML and convert to settings
-            const yamlData = this.parseYaml(this.yamlEditor.value);
-            const newSettings = this.yamlToSettings(yamlData);
-
-            // Update current settings
-            this.settings = { ...this.settings, ...newSettings };
-
-            // Save to storage
-            this.saveSettingsToStorage();
-
-            // Return to main page and refresh search
-            this.showMainPage();
-            this.performSearch();
-
-            this.showToast('Settings saved!');
-        } catch (error) {
-            this.updateYamlStatus(`Error saving settings: ${error.message}`, 'invalid');
-        }
-    }
-
-
     toggleGroupedUrls(toggleBtn) {
         const resultItem = toggleBtn.closest('.result-item');
         const groupedContainer = resultItem.querySelector('.grouped-urls-container');
@@ -1082,248 +849,6 @@ class HistoryGrep {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
-    }
-
-    // YAML parser using js-yaml library
-    parseYaml(yamlText) {
-        try {
-            return jsyaml.load(yamlText);
-        } catch (error) {
-            throw new Error(`YAML parsing error: ${error.message}`);
-        }
-    }
-
-
-    settingsToYaml(settings) {
-        let yaml = '# HistoryGrep Configuration\n\n';
-
-        yaml += '# Tab Management Exclusions\n';
-        yaml += 'exclude_patterns:\n';
-        yaml += '  close_tabs:\n';
-        if (settings.closeTabsExcludePatterns && settings.closeTabsExcludePatterns.length > 0) {
-            settings.closeTabsExcludePatterns.forEach(pattern => {
-                yaml += `    - '${pattern}'\n`;
-            });
-        } else {
-            yaml += "    # - 'important-site\\.com'\n";
-        }
-
-        yaml += '  search_results:\n';
-        if (settings.searchResultsExcludePatterns && settings.searchResultsExcludePatterns.length > 0) {
-            settings.searchResultsExcludePatterns.forEach(pattern => {
-                yaml += `    - '${pattern}'\n`;
-            });
-        } else {
-            yaml += "    # - 'private\\.company\\.com'\n";
-        }
-
-        yaml += '\n# URL Grouping Rules - processed in order, first match wins\n';
-        yaml += '#\n';
-        yaml += '# group_by options:\n';
-        yaml += '#   fragment          - Group by URL without fragment (everything after #)\n';
-        yaml += '#   query             - Group by URL without query parameters (everything after ?)\n';
-        yaml += '#   query-and-fragment - Group by URL without query parameters and fragment\n';
-        yaml += '#   path-segment      - Group by URL path removing last segment\n';
-        yaml += '#   subdomain         - Group by domain without subdomain (www.example.com -> example.com)\n';
-        yaml += '#   none              - No grouping (default behavior)\n';
-        yaml += '#\n';
-        yaml += '# Examples:\n';
-        yaml += '#   fragment: https://docs.google.com/document/d/123#heading -> https://docs.google.com/document/d/123\n';
-        yaml += '#   query: https://example.com/search?q=test&page=2 -> https://example.com/search\n';
-        yaml += '#   query-and-fragment: https://example.com/page?id=1#section -> https://example.com/page\n';
-        yaml += '#   path-segment: https://github.com/user/repo/issues/123 -> https://github.com/user/repo/issues\n';
-        yaml += '#   subdomain: https://mail.google.com/inbox -> https://google.com/inbox\n\n';
-
-        yaml += 'url_grouping_rules:\n';
-        if (settings.urlGroupingRules && settings.urlGroupingRules.length > 0) {
-            settings.urlGroupingRules.forEach(rule => {
-                // Convert internal underscore format to YAML hyphen format
-                let yamlGroupBy = rule.groupBy;
-                if (yamlGroupBy === 'path_segment') {
-                    yamlGroupBy = 'path-segment';
-                }
-                if (yamlGroupBy === 'query_and_fragment') {
-                    yamlGroupBy = 'query-and-fragment';
-                }
-
-                yaml += `  - pattern: '${rule.pattern}'\n`;
-                yaml += `    group_by: ${yamlGroupBy}\n`;
-                yaml += `    description: '${rule.description}'\n\n`;
-            });
-        }
-
-        return yaml;
-    }
-
-    yamlToSettings(yamlData) {
-        const settings = {
-            urlGroupingRules: [],
-            closeTabsExcludePatterns: [],
-            searchResultsExcludePatterns: []
-        };
-
-        if (yamlData.url_grouping_rules) {
-            settings.urlGroupingRules = yamlData.url_grouping_rules.map(rule => {
-                // Normalize group_by values (convert hyphen to underscore for internal use)
-                let groupBy = rule.group_by || 'fragment';
-                if (groupBy === 'path-segment') {
-                    groupBy = 'path_segment';
-                }
-                if (groupBy === 'query-and-fragment') {
-                    groupBy = 'query_and_fragment';
-                }
-
-                return {
-                    pattern: rule.pattern || '',
-                    groupBy: groupBy,
-                    description: rule.description || ''
-                };
-            });
-        }
-
-        if (yamlData.exclude_patterns) {
-            if (yamlData.exclude_patterns.close_tabs) {
-                settings.closeTabsExcludePatterns = yamlData.exclude_patterns.close_tabs;
-            }
-            if (yamlData.exclude_patterns.search_results) {
-                settings.searchResultsExcludePatterns = yamlData.exclude_patterns.search_results;
-            }
-        }
-
-        return settings;
-    }
-
-    validateYamlDebounced() {
-        clearTimeout(this.yamlValidationTimeout);
-        this.yamlValidationTimeout = setTimeout(() => {
-            this.validateYaml(false);
-        }, 500);
-    }
-
-    validateYaml(showSuccess = true) {
-        const yamlText = this.yamlEditor.value.trim();
-
-        if (!yamlText) {
-            this.updateYamlStatus('Enter configuration above', 'info');
-            return false;
-        }
-
-        try {
-            const parsed = this.parseYaml(yamlText);
-
-            // Validate structure
-            const errors = [];
-
-            if (parsed.url_grouping_rules) {
-                parsed.url_grouping_rules.forEach((rule, index) => {
-                    console.log(`Debug Rule ${index + 1}:`, rule); // Debug logging
-                    if (!rule.pattern) {
-                        errors.push(`Rule ${index + 1}: missing pattern`);
-                    }
-                    if (!rule.group_by || !['fragment', 'query', 'query_and_fragment', 'query-and-fragment', 'path_segment', 'path-segment', 'subdomain', 'none'].includes(rule.group_by)) {
-                        errors.push(`Rule ${index + 1}: invalid group_by value (got: ${rule.group_by})`);
-                    }
-                    // Test regex pattern
-                    try {
-                        new RegExp(rule.pattern);
-                    } catch (e) {
-                        errors.push(`Rule ${index + 1}: invalid regex pattern`);
-                    }
-                });
-            }
-
-            if (errors.length > 0) {
-                this.updateYamlStatus(`Validation errors: ${errors.join(', ')}`, 'invalid');
-                return false;
-            }
-
-            if (showSuccess) {
-                this.updateYamlStatus('✓ Configuration is valid', 'valid');
-            } else {
-                this.updateYamlStatus('', 'info');
-            }
-            return true;
-        } catch (error) {
-            this.updateYamlStatus(`Parse error: ${error.message}`, 'invalid');
-            return false;
-        }
-    }
-
-    updateYamlStatus(message, type) {
-        this.yamlStatus.textContent = message;
-        this.yamlStatus.className = `yaml-status ${type}`;
-    }
-
-    loadYamlTemplate() {
-        const template = `# HistoryGrep Configuration
-# URL Grouping Rules - processed in order, first match wins
-
-url_grouping_rules:
-  - pattern: "docs\\\\.google\\\\.com"
-    group_by: fragment
-    description: "Google Docs - group by document"
-
-  - pattern: "github\\\\.com/.+/issues"
-    group_by: fragment
-    description: "GitHub Issues - group by issue page"
-
-  - pattern: "stackoverflow\\\\.com/questions"
-    group_by: fragment
-    description: "Stack Overflow - group by question"
-
-  - pattern: "shop\\\\.example\\\\.com/product"
-    group_by: query
-    description: "E-commerce - group product variants"
-
-  - pattern: "api\\\\..*\\\\.com/v\\\\d+"
-    group_by: path-segment
-    description: "API endpoints - group by resource"
-
-  - pattern: ".*"
-    group_by: none
-    description: "Default - no grouping"
-
-# Tab Management Exclusions
-exclude_patterns:
-  close_tabs:
-    - "important-site\\\\.com"
-    - "localhost:\\\\d+"
-
-  search_results:
-    - "private\\\\.company\\\\.com"
-    - ".*\\\\.internal"
-`;
-        this.yamlEditor.value = template;
-        this.validateYaml();
-    }
-
-    exportYamlConfig() {
-        const yamlContent = this.yamlEditor.value;
-        const blob = new Blob([yamlContent], { type: 'text/yaml' });
-        const url = URL.createObjectURL(blob);
-
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'historygrep-config.yaml';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-
-        this.updateYamlStatus('✓ Configuration exported', 'valid');
-    }
-
-    importYamlConfig(event) {
-        const file = event.target.files[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            this.yamlEditor.value = e.target.result;
-            this.validateYaml();
-            event.target.value = ''; // Reset file input
-        };
-        reader.readAsText(file);
     }
 }
 

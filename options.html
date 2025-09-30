@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HistoryGrep Settings</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f8f9fa;
+            color: #333;
+            line-height: 1.6;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .settings-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .settings-header {
+            background: #1a73e8;
+            color: white;
+            padding: 24px;
+        }
+
+        .settings-header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 600;
+        }
+
+        .settings-content {
+            padding: 32px;
+        }
+
+        .settings-section {
+            margin-bottom: 24px;
+        }
+
+        .settings-section h2 {
+            margin: 0 0 8px 0;
+            color: #333;
+            font-size: 20px;
+        }
+
+        .settings-section p {
+            margin: 0 0 12px 0;
+            color: #666;
+            font-size: 14px;
+        }
+
+        .yaml-editor-container {
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            background: #f8f9fa;
+            overflow: hidden;
+        }
+
+        .yaml-toolbar {
+            display: flex;
+            gap: 8px;
+            padding: 8px;
+            background: #ffffff;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .yaml-toolbar-btn {
+            padding: 6px 12px;
+            border: 1px solid #ddd;
+            background: #f8f9fa;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+
+        .yaml-toolbar-btn:hover {
+            background: #e9ecef;
+            border-color: #1a73e8;
+        }
+
+        .yaml-editor {
+            width: 100%;
+            border: none;
+            padding: 12px;
+            font-family: 'Courier New', Consolas, 'Monaco', monospace;
+            font-size: 13px;
+            line-height: 1.4;
+            resize: vertical;
+            background: #ffffff;
+            color: #333;
+        }
+
+        .yaml-editor:focus {
+            outline: none;
+            box-shadow: inset 0 0 3px rgba(26, 115, 232, 0.3);
+        }
+
+        .yaml-status {
+            padding: 8px 12px;
+            font-size: 12px;
+            background: #f8f9fa;
+            border-top: 1px solid #e0e0e0;
+            min-height: 20px;
+        }
+
+        .yaml-status.valid {
+            color: #28a745;
+            background: #d4edda;
+        }
+
+        .yaml-status.invalid {
+            color: #dc3545;
+            background: #f8d7da;
+        }
+
+        .yaml-status.info {
+            color: #17a2b8;
+            background: #d1ecf1;
+        }
+
+        .settings-actions {
+            margin-top: 32px;
+            padding-top: 24px;
+            border-top: 1px solid #e0e0e0;
+            display: flex;
+            gap: 16px;
+            justify-content: flex-end;
+        }
+
+        .save-settings-btn {
+            background: #1a73e8;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 12px 24px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            min-width: 140px;
+        }
+
+        .save-settings-btn:hover {
+            background: #1557b0;
+        }
+    </style>
+</head>
+<body>
+    <div class="settings-container">
+        <div class="settings-header">
+            <h1>HistoryGrep Configuration</h1>
+        </div>
+
+        <div class="settings-content">
+            <div class="settings-section">
+                <h2>Configuration (YAML)</h2>
+                <p>Define URL grouping rules and exclusion patterns. Rules are processed in order - first match wins.</p>
+                <div class="yaml-editor-container">
+                    <div class="yaml-toolbar">
+                        <button class="yaml-toolbar-btn" id="loadTemplateBtn">Load Template</button>
+                        <button class="yaml-toolbar-btn" id="validateYamlBtn">Validate</button>
+                        <button class="yaml-toolbar-btn" id="exportConfigBtn">Export</button>
+                        <input type="file" id="importConfigFile" accept=".yaml,.yml" style="display: none;">
+                        <button class="yaml-toolbar-btn" id="importConfigBtn">Import</button>
+                    </div>
+                    <textarea
+                        class="yaml-editor"
+                        id="yamlEditor"
+                        rows="30"
+                        placeholder="Loading configuration..."></textarea>
+                    <div class="yaml-status" id="yamlStatus"></div>
+                </div>
+            </div>
+
+            <div class="settings-actions">
+                <button class="save-settings-btn" id="saveSettingsBtn">Save Configuration</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js-yaml.min.js"></script>
+    <script src="options.js"></script>
+</body>
+</html>
