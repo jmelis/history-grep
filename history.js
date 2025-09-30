@@ -17,13 +17,18 @@ class HistoryGrep {
         this.closeAllTabsBtn = document.getElementById('closeAllTabs');
         this.consolidateTabsBtn = document.getElementById('consolidateTabs');
         this.settingsBtn = document.getElementById('settingsBtn');
-        this.settingsModal = document.getElementById('settingsModal');
-        this.closeSettingsBtn = document.getElementById('closeSettingsBtn');
+        this.mainPage = document.getElementById('mainPage');
+        this.settingsPage = document.getElementById('settingsPage');
+        this.backToSearchBtn = document.getElementById('backToSearchBtn');
         this.saveSettingsBtn = document.getElementById('saveSettingsBtn');
-        this.closeTabsExcludeList = document.getElementById('closeTabsExcludeList');
-        this.searchResultsExcludeList = document.getElementById('searchResultsExcludeList');
-        this.groupingRulesList = document.getElementById('groupingRulesList');
-        this.addGroupingRuleBtn = document.getElementById('addGroupingRule');
+        this.cancelSettingsBtn = document.getElementById('cancelSettingsBtn');
+        this.yamlEditor = document.getElementById('yamlEditor');
+        this.yamlStatus = document.getElementById('yamlStatus');
+        this.loadTemplateBtn = document.getElementById('loadTemplateBtn');
+        this.validateYamlBtn = document.getElementById('validateYamlBtn');
+        this.exportConfigBtn = document.getElementById('exportConfigBtn');
+        this.importConfigBtn = document.getElementById('importConfigBtn');
+        this.importConfigFile = document.getElementById('importConfigFile');
 
         this.currentResults = [];
         this.displayedResults = [];
@@ -59,6 +64,8 @@ class HistoryGrep {
                 }
             ]
         };
+
+        this.yamlValidationTimeout = null;
 
         this.initializeEventListeners();
         this.initializeDateInputs();
@@ -140,38 +147,66 @@ class HistoryGrep {
 
         // Settings button
         this.settingsBtn.addEventListener('click', () => {
-            this.openSettings();
+            this.showSettingsPage();
         });
 
-        // Close settings button
-        this.closeSettingsBtn.addEventListener('click', () => {
-            this.closeSettings();
-        });
+        // Back to search button
+        if (this.backToSearchBtn) {
+            this.backToSearchBtn.addEventListener('click', () => {
+                this.showMainPage();
+            });
+        }
+
+        // Cancel settings button
+        if (this.cancelSettingsBtn) {
+            this.cancelSettingsBtn.addEventListener('click', () => {
+                this.showMainPage();
+            });
+        }
 
         // Save settings button
-        this.saveSettingsBtn.addEventListener('click', () => {
-            this.saveSettings();
-        });
-
-        // Click outside modal to close
-        this.settingsModal.addEventListener('click', (e) => {
-            if (e.target === this.settingsModal) {
-                this.closeSettings();
-            }
-        });
-
-        // Add pattern buttons
-        document.querySelectorAll('.add-pattern-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const targetList = e.target.getAttribute('data-target');
-                this.addPatternToList(targetList);
+        if (this.saveSettingsBtn) {
+            this.saveSettingsBtn.addEventListener('click', () => {
+                this.saveSettings();
             });
-        });
+        }
 
-        // Add grouping rule button
-        this.addGroupingRuleBtn.addEventListener('click', () => {
-            this.addGroupingRule();
-        });
+
+        // YAML editor buttons
+        if (this.loadTemplateBtn) {
+            this.loadTemplateBtn.addEventListener('click', () => {
+                this.loadYamlTemplate();
+            });
+        }
+
+        if (this.validateYamlBtn) {
+            this.validateYamlBtn.addEventListener('click', () => {
+                this.validateYaml();
+            });
+        }
+
+        if (this.exportConfigBtn) {
+            this.exportConfigBtn.addEventListener('click', () => {
+                this.exportYamlConfig();
+            });
+        }
+
+        if (this.importConfigBtn && this.importConfigFile) {
+            this.importConfigBtn.addEventListener('click', () => {
+                this.importConfigFile.click();
+            });
+
+            this.importConfigFile.addEventListener('change', (e) => {
+                this.importYamlConfig(e);
+            });
+        }
+
+        // YAML editor validation on change
+        if (this.yamlEditor) {
+            this.yamlEditor.addEventListener('input', () => {
+                this.validateYamlDebounced();
+            });
+        }
 
         // Handle result clicks for tab switching and copy URL
         this.resultsContainer.addEventListener('click', async (e) => {
@@ -450,6 +485,11 @@ class HistoryGrep {
                 case 'query':
                     // Remove query parameters (everything after ?)
                     return url.split('?')[0];
+
+                case 'query_and_fragment':
+                case 'query-and-fragment':
+                    // Remove both query parameters and fragment
+                    return url.split('?')[0].split('#')[0];
 
                 case 'path-segment':
                     // Remove last path segment
@@ -965,163 +1005,59 @@ class HistoryGrep {
         }
     }
 
-    openSettings() {
-        this.populateSettingsUI();
-        this.settingsModal.classList.add('active');
+    showSettingsPage() {
+        if (this.settingsPage && this.mainPage) {
+            this.populateSettingsUI();
+            this.mainPage.style.display = 'none';
+            this.settingsPage.style.display = 'block';
+        }
     }
 
-    closeSettings() {
-        this.settingsModal.classList.remove('active');
+    showMainPage() {
+        if (this.settingsPage && this.mainPage) {
+            this.settingsPage.style.display = 'none';
+            this.mainPage.style.display = 'block';
+        }
     }
 
     populateSettingsUI() {
-        this.populatePatternList('closeTabsExcludeList', this.settings.closeTabsExcludePatterns);
-        this.populatePatternList('searchResultsExcludeList', this.settings.searchResultsExcludePatterns);
-        this.populateGroupingRulesList();
-    }
-
-    populatePatternList(listId, patterns) {
-        const list = document.getElementById(listId);
-        list.innerHTML = '';
-
-        patterns.forEach((pattern, index) => {
-            this.addPatternToList(listId, pattern, index);
-        });
-
-        // Always add one empty row for new entries
-        if (patterns.length === 0) {
-            this.addPatternToList(listId, '', 0);
+        if (this.yamlEditor) {
+            // Populate YAML editor with current settings
+            const yamlContent = this.settingsToYaml(this.settings);
+            this.yamlEditor.value = yamlContent;
+            this.validateYaml(false);
         }
     }
 
-    addPatternToList(listId, pattern = '', index = null) {
-        const list = document.getElementById(listId);
-        const patternItem = document.createElement('div');
-        patternItem.className = 'pattern-item';
-
-        if (index === null) {
-            index = list.children.length;
-        }
-
-        patternItem.innerHTML = `
-            <input type="text" class="pattern-input" value="${pattern}" placeholder="e.g. github\.com|important-site\.com" data-index="${index}">
-            <button class="remove-pattern-btn" data-index="${index}">Remove</button>
-        `;
-
-        // Add event listeners
-        const removeBtn = patternItem.querySelector('.remove-pattern-btn');
-        removeBtn.addEventListener('click', () => {
-            patternItem.remove();
-        });
-
-        list.appendChild(patternItem);
-    }
-
-    populateGroupingRulesList() {
-        this.groupingRulesList.innerHTML = '';
-
-        // Safety check: ensure urlGroupingRules exists
-        if (!this.settings.urlGroupingRules || !Array.isArray(this.settings.urlGroupingRules)) {
-            this.settings.urlGroupingRules = [];
-        }
-
-        this.settings.urlGroupingRules.forEach((rule, index) => {
-            this.addGroupingRuleToList(rule, index);
-        });
-
-        // Always add one empty row for new entries
-        if (this.settings.urlGroupingRules.length === 0) {
-            this.addGroupingRuleToList({pattern: '', groupBy: 'none', description: ''}, 0);
-        }
-    }
-
-    addGroupingRule() {
-        // Safety check: ensure urlGroupingRules exists
-        if (!this.settings.urlGroupingRules || !Array.isArray(this.settings.urlGroupingRules)) {
-            this.settings.urlGroupingRules = [];
-        }
-
-        const newRule = {pattern: '', groupBy: 'fragment', description: ''};
-        const index = this.settings.urlGroupingRules.length;
-        this.addGroupingRuleToList(newRule, index);
-    }
-
-    addGroupingRuleToList(rule, index) {
-        const ruleItem = document.createElement('div');
-        ruleItem.className = 'grouping-rule-item';
-
-        ruleItem.innerHTML = `
-            <input type="text" class="rule-pattern" value="${rule.pattern}" placeholder="e.g. docs\\.google\\.com" data-index="${index}">
-            <select class="rule-type" data-index="${index}">
-                <option value="fragment" ${rule.groupBy === 'fragment' ? 'selected' : ''}>Remove Fragment (#)</option>
-                <option value="query" ${rule.groupBy === 'query' ? 'selected' : ''}>Remove Query (?)</option>
-                <option value="path-segment" ${rule.groupBy === 'path-segment' ? 'selected' : ''}>Remove Last Path</option>
-                <option value="none" ${rule.groupBy === 'none' ? 'selected' : ''}>No Grouping</option>
-            </select>
-            <input type="text" class="rule-description" value="${rule.description}" placeholder="Description" data-index="${index}">
-            <button class="remove-rule-btn" data-index="${index}">×</button>
-        `;
-
-        // Add event listeners
-        const removeBtn = ruleItem.querySelector('.remove-rule-btn');
-        removeBtn.addEventListener('click', () => {
-            ruleItem.remove();
-        });
-
-        this.groupingRulesList.appendChild(ruleItem);
-    }
 
     saveSettings() {
-        // Collect patterns from UI
-        this.settings.closeTabsExcludePatterns = this.collectPatternsFromList('closeTabsExcludeList');
-        this.settings.searchResultsExcludePatterns = this.collectPatternsFromList('searchResultsExcludeList');
-        this.settings.urlGroupingRules = this.collectGroupingRulesFromList();
+        // Validate YAML before saving
+        if (!this.validateYaml()) {
+            this.updateYamlStatus('Please fix validation errors before saving', 'invalid');
+            return;
+        }
 
-        // Save to storage
-        this.saveSettingsToStorage();
+        try {
+            // Parse YAML and convert to settings
+            const yamlData = this.parseYaml(this.yamlEditor.value);
+            const newSettings = this.yamlToSettings(yamlData);
 
-        // Close modal and refresh search
-        this.closeSettings();
-        this.performSearch();
+            // Update current settings
+            this.settings = { ...this.settings, ...newSettings };
 
-        this.showToast('Settings saved!');
+            // Save to storage
+            this.saveSettingsToStorage();
+
+            // Return to main page and refresh search
+            this.showMainPage();
+            this.performSearch();
+
+            this.showToast('Settings saved!');
+        } catch (error) {
+            this.updateYamlStatus(`Error saving settings: ${error.message}`, 'invalid');
+        }
     }
 
-    collectPatternsFromList(listId) {
-        const list = document.getElementById(listId);
-        const inputs = list.querySelectorAll('.pattern-input');
-        const patterns = [];
-
-        inputs.forEach(input => {
-            const pattern = input.value.trim();
-            if (pattern) {
-                patterns.push(pattern);
-            }
-        });
-
-        return patterns;
-    }
-
-    collectGroupingRulesFromList() {
-        const ruleItems = this.groupingRulesList.querySelectorAll('.grouping-rule-item');
-        const rules = [];
-
-        ruleItems.forEach(item => {
-            const pattern = item.querySelector('.rule-pattern').value.trim();
-            const groupBy = item.querySelector('.rule-type').value;
-            const description = item.querySelector('.rule-description').value.trim();
-
-            if (pattern) {
-                rules.push({
-                    pattern: pattern,
-                    groupBy: groupBy,
-                    description: description || `${groupBy} grouping for ${pattern}`
-                });
-            }
-        });
-
-        return rules;
-    }
 
     toggleGroupedUrls(toggleBtn) {
         const resultItem = toggleBtn.closest('.result-item');
@@ -1146,6 +1082,248 @@ class HistoryGrep {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    // YAML parser using js-yaml library
+    parseYaml(yamlText) {
+        try {
+            return jsyaml.load(yamlText);
+        } catch (error) {
+            throw new Error(`YAML parsing error: ${error.message}`);
+        }
+    }
+
+
+    settingsToYaml(settings) {
+        let yaml = '# HistoryGrep Configuration\n\n';
+
+        yaml += '# Tab Management Exclusions\n';
+        yaml += 'exclude_patterns:\n';
+        yaml += '  close_tabs:\n';
+        if (settings.closeTabsExcludePatterns && settings.closeTabsExcludePatterns.length > 0) {
+            settings.closeTabsExcludePatterns.forEach(pattern => {
+                yaml += `    - '${pattern}'\n`;
+            });
+        } else {
+            yaml += "    # - 'important-site\\.com'\n";
+        }
+
+        yaml += '  search_results:\n';
+        if (settings.searchResultsExcludePatterns && settings.searchResultsExcludePatterns.length > 0) {
+            settings.searchResultsExcludePatterns.forEach(pattern => {
+                yaml += `    - '${pattern}'\n`;
+            });
+        } else {
+            yaml += "    # - 'private\\.company\\.com'\n";
+        }
+
+        yaml += '\n# URL Grouping Rules - processed in order, first match wins\n';
+        yaml += '#\n';
+        yaml += '# group_by options:\n';
+        yaml += '#   fragment          - Group by URL without fragment (everything after #)\n';
+        yaml += '#   query             - Group by URL without query parameters (everything after ?)\n';
+        yaml += '#   query-and-fragment - Group by URL without query parameters and fragment\n';
+        yaml += '#   path-segment      - Group by URL path removing last segment\n';
+        yaml += '#   subdomain         - Group by domain without subdomain (www.example.com -> example.com)\n';
+        yaml += '#   none              - No grouping (default behavior)\n';
+        yaml += '#\n';
+        yaml += '# Examples:\n';
+        yaml += '#   fragment: https://docs.google.com/document/d/123#heading -> https://docs.google.com/document/d/123\n';
+        yaml += '#   query: https://example.com/search?q=test&page=2 -> https://example.com/search\n';
+        yaml += '#   query-and-fragment: https://example.com/page?id=1#section -> https://example.com/page\n';
+        yaml += '#   path-segment: https://github.com/user/repo/issues/123 -> https://github.com/user/repo/issues\n';
+        yaml += '#   subdomain: https://mail.google.com/inbox -> https://google.com/inbox\n\n';
+
+        yaml += 'url_grouping_rules:\n';
+        if (settings.urlGroupingRules && settings.urlGroupingRules.length > 0) {
+            settings.urlGroupingRules.forEach(rule => {
+                // Convert internal underscore format to YAML hyphen format
+                let yamlGroupBy = rule.groupBy;
+                if (yamlGroupBy === 'path_segment') {
+                    yamlGroupBy = 'path-segment';
+                }
+                if (yamlGroupBy === 'query_and_fragment') {
+                    yamlGroupBy = 'query-and-fragment';
+                }
+
+                yaml += `  - pattern: '${rule.pattern}'\n`;
+                yaml += `    group_by: ${yamlGroupBy}\n`;
+                yaml += `    description: '${rule.description}'\n\n`;
+            });
+        }
+
+        return yaml;
+    }
+
+    yamlToSettings(yamlData) {
+        const settings = {
+            urlGroupingRules: [],
+            closeTabsExcludePatterns: [],
+            searchResultsExcludePatterns: []
+        };
+
+        if (yamlData.url_grouping_rules) {
+            settings.urlGroupingRules = yamlData.url_grouping_rules.map(rule => {
+                // Normalize group_by values (convert hyphen to underscore for internal use)
+                let groupBy = rule.group_by || 'fragment';
+                if (groupBy === 'path-segment') {
+                    groupBy = 'path_segment';
+                }
+                if (groupBy === 'query-and-fragment') {
+                    groupBy = 'query_and_fragment';
+                }
+
+                return {
+                    pattern: rule.pattern || '',
+                    groupBy: groupBy,
+                    description: rule.description || ''
+                };
+            });
+        }
+
+        if (yamlData.exclude_patterns) {
+            if (yamlData.exclude_patterns.close_tabs) {
+                settings.closeTabsExcludePatterns = yamlData.exclude_patterns.close_tabs;
+            }
+            if (yamlData.exclude_patterns.search_results) {
+                settings.searchResultsExcludePatterns = yamlData.exclude_patterns.search_results;
+            }
+        }
+
+        return settings;
+    }
+
+    validateYamlDebounced() {
+        clearTimeout(this.yamlValidationTimeout);
+        this.yamlValidationTimeout = setTimeout(() => {
+            this.validateYaml(false);
+        }, 500);
+    }
+
+    validateYaml(showSuccess = true) {
+        const yamlText = this.yamlEditor.value.trim();
+
+        if (!yamlText) {
+            this.updateYamlStatus('Enter configuration above', 'info');
+            return false;
+        }
+
+        try {
+            const parsed = this.parseYaml(yamlText);
+
+            // Validate structure
+            const errors = [];
+
+            if (parsed.url_grouping_rules) {
+                parsed.url_grouping_rules.forEach((rule, index) => {
+                    console.log(`Debug Rule ${index + 1}:`, rule); // Debug logging
+                    if (!rule.pattern) {
+                        errors.push(`Rule ${index + 1}: missing pattern`);
+                    }
+                    if (!rule.group_by || !['fragment', 'query', 'query_and_fragment', 'query-and-fragment', 'path_segment', 'path-segment', 'subdomain', 'none'].includes(rule.group_by)) {
+                        errors.push(`Rule ${index + 1}: invalid group_by value (got: ${rule.group_by})`);
+                    }
+                    // Test regex pattern
+                    try {
+                        new RegExp(rule.pattern);
+                    } catch (e) {
+                        errors.push(`Rule ${index + 1}: invalid regex pattern`);
+                    }
+                });
+            }
+
+            if (errors.length > 0) {
+                this.updateYamlStatus(`Validation errors: ${errors.join(', ')}`, 'invalid');
+                return false;
+            }
+
+            if (showSuccess) {
+                this.updateYamlStatus('✓ Configuration is valid', 'valid');
+            } else {
+                this.updateYamlStatus('', 'info');
+            }
+            return true;
+        } catch (error) {
+            this.updateYamlStatus(`Parse error: ${error.message}`, 'invalid');
+            return false;
+        }
+    }
+
+    updateYamlStatus(message, type) {
+        this.yamlStatus.textContent = message;
+        this.yamlStatus.className = `yaml-status ${type}`;
+    }
+
+    loadYamlTemplate() {
+        const template = `# HistoryGrep Configuration
+# URL Grouping Rules - processed in order, first match wins
+
+url_grouping_rules:
+  - pattern: "docs\\\\.google\\\\.com"
+    group_by: fragment
+    description: "Google Docs - group by document"
+
+  - pattern: "github\\\\.com/.+/issues"
+    group_by: fragment
+    description: "GitHub Issues - group by issue page"
+
+  - pattern: "stackoverflow\\\\.com/questions"
+    group_by: fragment
+    description: "Stack Overflow - group by question"
+
+  - pattern: "shop\\\\.example\\\\.com/product"
+    group_by: query
+    description: "E-commerce - group product variants"
+
+  - pattern: "api\\\\..*\\\\.com/v\\\\d+"
+    group_by: path-segment
+    description: "API endpoints - group by resource"
+
+  - pattern: ".*"
+    group_by: none
+    description: "Default - no grouping"
+
+# Tab Management Exclusions
+exclude_patterns:
+  close_tabs:
+    - "important-site\\\\.com"
+    - "localhost:\\\\d+"
+
+  search_results:
+    - "private\\\\.company\\\\.com"
+    - ".*\\\\.internal"
+`;
+        this.yamlEditor.value = template;
+        this.validateYaml();
+    }
+
+    exportYamlConfig() {
+        const yamlContent = this.yamlEditor.value;
+        const blob = new Blob([yamlContent], { type: 'text/yaml' });
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'historygrep-config.yaml';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        this.updateYamlStatus('✓ Configuration exported', 'valid');
+    }
+
+    importYamlConfig(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            this.yamlEditor.value = e.target.result;
+            this.validateYaml();
+            event.target.value = ''; // Reset file input
+        };
+        reader.readAsText(file);
     }
 }
 
